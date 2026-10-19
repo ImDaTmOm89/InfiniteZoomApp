@@ -10,6 +10,12 @@ Last updated: 2026-10-19 (audit, after PLAN.md restored)
 - `PLAN.md`, `PROGRESS.md`, `.vscode/settings.json` are all uncommitted.
 
 ## Finished steps
+- Step 7 (brush tools) — 2026-10-19. `BrushType.PEN/MARKER/AIRBRUSH` all render
+  distinctly: PEN = opaque ribbon w/ pressure; MARKER = flat, 70% alpha, pressure off;
+  AIRBRUSH = blurred edge (BlurMaskFilter), 80% alpha. Eraser is now a tool
+  (`Tool.ERASER`) in the brush panel; hardware stylus eraser still works via
+  `vm.eraserMode` setter. Files: `CanvasRenderer.kt`, `BrushSettingsPanel.kt`,
+  `DrawingViewModel.kt`. Build + tests pass, committed.
 
 - Steps 1–2 — committed (`f80b1b5 Steps 1-2 working`).
 - Step 3 — Data models: `model/Models.kt` (BrushType = PEN, MARKER, AIRBRUSH).
