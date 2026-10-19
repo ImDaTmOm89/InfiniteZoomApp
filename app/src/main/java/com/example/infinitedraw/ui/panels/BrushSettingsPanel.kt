@@ -25,10 +25,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import com.example.infinitedraw.model.BrushType
 import com.example.infinitedraw.ui.DrawingViewModel
+import com.example.infinitedraw.ui.Tool
 
 @Composable
 fun BrushSettingsPanel(vm: DrawingViewModel) {
-    var type by remember { mutableStateOf(vm.brushType) }
     var size by remember { mutableStateOf(vm.brushSizePx) }
     var pressure by remember { mutableStateOf(vm.usePressure) }
 
@@ -37,7 +37,12 @@ fun BrushSettingsPanel(vm: DrawingViewModel) {
 
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf(BrushType.PEN, BrushType.MARKER, BrushType.AIRBRUSH).forEach { t ->
-                val selected = t == type
+                val tool = when (t) {
+                    BrushType.MARKER -> Tool.MARKER
+                    BrushType.AIRBRUSH -> Tool.AIRBRUSH
+                    else -> Tool.PEN
+                }
+                val selected = vm.tool == tool
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(8.dp))
@@ -45,7 +50,7 @@ fun BrushSettingsPanel(vm: DrawingViewModel) {
                             if (selected) androidx.compose.ui.graphics.Color(0x332196F3)
                             else androidx.compose.ui.graphics.Color.Transparent
                         )
-                        .clickable { type = t; vm.brushType = t }
+                        .clickable { vm.tool = tool }
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) { Text(t.name.lowercase().replaceFirstChar { it.uppercase() }) }
             }
@@ -63,13 +68,19 @@ fun BrushSettingsPanel(vm: DrawingViewModel) {
         }
 
         Spacer(Modifier.height(4.dp))
-        Text("Eraser", style = MaterialTheme.typography.titleSmall)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Use eraser", Modifier.weight(1f))
-            androidx.compose.material3.Switch(
-                checked = vm.eraserMode,
-                onCheckedChange = { vm.eraserMode = it }
-            )
+        Text("Tools", style = MaterialTheme.typography.titleSmall)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val eraserSelected = vm.tool == Tool.ERASER
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(
+                        if (eraserSelected) androidx.compose.ui.graphics.Color(0x332196F3)
+                        else androidx.compose.ui.graphics.Color.Transparent
+                    )
+                    .clickable { vm.tool = if (eraserSelected) Tool.PEN else Tool.ERASER }
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) { Text("Eraser") }
         }
     }
 }

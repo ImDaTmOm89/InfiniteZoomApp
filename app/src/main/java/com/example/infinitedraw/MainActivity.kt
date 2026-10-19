@@ -22,6 +22,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +38,12 @@ import com.example.infinitedraw.ui.panels.BrushSettingsPanel
 import com.example.infinitedraw.ui.panels.ColorPickerPanel
 import com.example.infinitedraw.ui.panels.LayersPanel
 import com.example.infinitedraw.ui.panels.PaperPanel
+import com.example.infinitedraw.storage.ProjectStorage
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 
 enum class PanelType { COLOR, BRUSH, LAYERS, PAPER }
 
@@ -62,6 +69,21 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
     var viewH by remember { mutableStateOf(1920) }
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) vm.addImage(uri, viewW, viewH)
+    }
+
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(Unit) {
+        val last = ProjectStorage.lastProjectName(context)
+        if (last != null) ProjectStorage.load(context, last, vm.project, vm.engine)
+        vm.redraw?.invoke()
+    }
+    DisposableEffect(lifecycleOwner) {
+        val obs = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE) vm.saveNow()
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs); vm.saveNow() }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {

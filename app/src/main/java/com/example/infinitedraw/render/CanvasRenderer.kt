@@ -4,6 +4,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import com.example.infinitedraw.model.BrushType
 import com.example.infinitedraw.model.F
 import com.example.infinitedraw.model.Stroke
 import com.example.infinitedraw.model.ZoomLevel
@@ -106,8 +107,9 @@ class CanvasRenderer {
             }
             for (s in level.strokes) {
                 if (s.layerId != layer.id) continue
+                if (s in vm.pendingRemoved) continue
                 if (cull(s, camX.toFloat(), camY.toFloat(), z, w, h)) continue
-                drawStroke(canvas, s, camX, camY, zoom, w, h, paint, path, layerAlpha)
+                drawStroke(canvas, s, camX, camY, zoom, w, h, paint, path)
             }
             paint.xfermode = null
             canvas.restoreToCount(save)
@@ -160,83 +162,63 @@ class CanvasRenderer {
         return r < 0 || bo < 0 || l > w || t > h
     }
 
-    fun drawStroke(canvas: Canvas, stroke: Stroke, camX: Double, camY: Double, zoom: Double,
-                   w: Int, h: Int, paint: Paint, path: Path, layerAlpha: Int = 255) {
-        val pts = stroke.points
-        if (pts.isEmpty()) return
-        val z = zoom.toFloat()
-        val halfW = (w / 2f).toFloat()
-        val halfH = (h / 2f).toFloat()
-        paint.alpha = layerAlpha
-
-        // screen coords
+    fun drawStroke(canvas: Canvas, s: Stroke, camX: Double, camY: Double, zoom: Double,
+                   w: Int, h: Int, paint: Paint, path: Path) {
+        val pts = s.points
         val n = pts.size
-        val sx = FloatArray(n); val sy = FloatArray(n)
+        if (n == 0) return
+        val b = s.bounds
+        val x0 = (b[0] - camX) * zoom + w / 2.0; val x1 = (b[2] - camX) * zoom + w / 2.0
+        val y0 = (b[1] - camY) * zoom + h / 2.0; val y1 = (b[3] - camY) * zoom + h / 2.0
+        if (x1 < 0 || x0 > w || y1 < 0 || y0 > h) return   // cull
+
+        val xs = FloatArray(n); val ys = FloatArray(n); val rs = FloatArray(n)
         for (i in 0 until n) {
-            sx[i] = clampS((pts[i].x - camX) * zoom + halfW)
-            sy[i] = clampS((pts[i].y - camY) * zoom + halfH)
-        }
-        fun radius(i: Int): Float {
-            val pressure = if (stroke.usePressure) (0.15f + 0.85f * pts[i].p) else 1f
-            return when (stroke.brush) {
-                com.example.infinitedraw.model.BrushType.PEN -> 0.5f * stroke.width * z * pressure
-                com.example.infinitedraw.model.BrushType.MARKER -> 0.5f * stroke.width * z   // no pressure
-                com.example.infinitedraw.model.BrushType.AIRBRUSH -> 1.5f * stroke.width * z * pressure
-            }
+            xs[i] = ((pts[i].x - camX) * zoom + w / 2.0).coerceIn(-100000.0, 100000.0).toFloat()
+            ys[i] = ((pts[i].y - camY) * zoom + h / 2.0).coerceIn(-100000.0, 100000.0).toFloat()
+            val pf = if (s.usePressure) 0.15 + 0.85 * pts[i].p else 1.0
+            rs[i] = (0.5 * s.width * zoom * pf).toFloat()
         }
         paint.style = Paint.Style.FILL
         paint.isAntiAlias = true
-        when (stroke.brush) {
-            com.example.infinitedraw.model.BrushType.PEN -> paint.color = stroke.color
-            com.example.infinitedraw.model.BrushType.MARKER -> {
-                // ~70% alpha solid
-                paint.color = stroke.color
-                paint.alpha = ((layerAlpha / 255f) * 0.7f * 255f).toInt().coerceIn(0, 255)
+        paint.maskFilter = null
+        paint.color = s.color
+
+        when (s.brush) {
+            BrushType.MARKER -> {
+                // flat, slightly translucent, pressure ignored
+                paint.alpha = ((paint.color ushr 24) * 0.7f).toInt().coerceAtMost(255)
             }
-            com.example.infinitedraw.model.BrushType.AIRBRUSH -> {
-                // soft dots via alpha
-                paint.color = stroke.color
-                paint.alpha = ((layerAlpha / 255f) * 0.4f * 255f).toInt().coerceIn(0, 255)
+            BrushType.AIRBRUSH -> {
+                // soft blurred edge
+                paint.maskFilter = android.graphics.BlurMaskFilter(
+                    (0.35f * s.width * zoom).toFloat().coerceAtLeast(1f),
+                    android.graphics.BlurMaskFilter.Blur.NORMAL)
+                paint.alpha = ((paint.color ushr 24) * 0.8f).toInt().coerceAtMost(255)
             }
-        }
-        if (n == 1) {
-            path.rewind()
-            path.addCircle(sx[0], sy[0], radius(0).coerceAtLeast(0.5f), Path.Direction.CW)
-            paint.style = Paint.Style.FILL
-            paint.isAntiAlias = true
-            canvas.drawPath(path, paint)
-            paint.xfermode = null
-            return
+            else -> {}
         }
 
-        // ribbon
-        val leftX = FloatArray(n); val leftY = FloatArray(n)
-        val rightX = FloatArray(n); val rightY = FloatArray(n)
-        for (i in 0 until n) {
-            val r = radius(i)
-            val px = if (i == 0) pts[0] else pts[i - 1]
-            val nx = if (i == n - 1) pts[n - 1] else pts[i + 1]
-            val dx = nx.x - px.x; val dy = nx.y - px.y
-            val len = hypot(dx, dy)
-            if (len == 0f) {
-                leftX[i] = sx[i]; leftY[i] = sy[i]; rightX[i] = sx[i]; rightY[i] = sy[i]
-                continue
+        if (n >= 2) {
+            val lx = FloatArray(n); val ly = FloatArray(n); val rx = FloatArray(n); val ry = FloatArray(n)
+            for (i in 0 until n) {
+                val a = maxOf(i - 1, 0); val c = minOf(i + 1, n - 1)
+                var dx = xs[c] - xs[a]; var dy = ys[c] - ys[a]
+                val len = kotlin.math.hypot(dx, dy)
+                if (len == 0f) { dx = 1f; dy = 0f } else { dx /= len; dy /= len }
+                val nx = -dy; val ny = dx
+                lx[i] = xs[i] + nx * rs[i]; ly[i] = ys[i] + ny * rs[i]
+                rx[i] = xs[i] - nx * rs[i]; ry[i] = ys[i] - ny * rs[i]
             }
-            val nX = -dy / len; val nY = dx / len
-            leftX[i] = sx[i] + nX * r; leftY[i] = sy[i] + nY * r
-            rightX[i] = sx[i] - nX * r; rightY[i] = sx[i] - nY * r
+            path.rewind()
+            path.moveTo(lx[0], ly[0])
+            for (i in 1 until n) path.lineTo(lx[i], ly[i])
+            for (i in n - 1 downTo 0) path.lineTo(rx[i], ry[i])
+            path.close()
+            canvas.drawPath(path, paint)
         }
-        path.rewind()
-        path.moveTo(leftX[0], leftY[0])
-        for (i in 1 until n) path.lineTo(leftX[i], leftY[i])
-        for (i in n - 1 downTo 0) path.lineTo(rightX[i], rightY[i])
-        path.close()
-        path.addCircle(sx[0], sy[0], radius(0).coerceAtLeast(0.5f), Path.Direction.CW)
-        path.addCircle(sx[n - 1], sy[n - 1], radius(n - 1).coerceAtLeast(0.5f), Path.Direction.CW)
-        paint.style = Paint.Style.FILL
-        paint.isAntiAlias = true
-        canvas.drawPath(path, paint)
-        paint.xfermode = null
+        canvas.drawCircle(xs[0], ys[0], rs[0], paint)
+        canvas.drawCircle(xs[n - 1], ys[n - 1], rs[n - 1], paint)
     }
 
     private fun clampS(v: Double): Float = v.coerceIn(-100000.0, 100000.0).toFloat()

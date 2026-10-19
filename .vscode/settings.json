@@ -1,6 +1,21 @@
 {
     "cSpell.words": [
-        "tgizz"
+        "androidx",
+        "appcompat",
+        "ARGB",
+        "Deque",
+        "documentfile",
+        "gradlew",
+        "hotspot",
+        "hypot",
+        "infinitedraw",
+        "kotlinx",
+        "LOCALAPPDATA",
+        "sdkmanager",
+        "tgizz",
+        "undoable",
+        "viewinterop",
+        "viewmodel"
     ],
     "CodeGPT.apiKey": "CodeGPT Plus Beta"
 }

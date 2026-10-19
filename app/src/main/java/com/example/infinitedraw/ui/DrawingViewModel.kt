@@ -3,23 +3,29 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import kotlinx.coroutines.launch
 import com.example.infinitedraw.engine.InfiniteZoomEngine
-import com.example.infinitedraw.model.AddLayerCommand
-import com.example.infinitedraw.model.AddImageCommand
-import com.example.infinitedraw.model.AddStrokeCommand
+import com.example.infinitedraw.engine.AddImage
+import com.example.infinitedraw.engine.AddLayer
+import com.example.infinitedraw.engine.AddStroke
+import com.example.infinitedraw.engine.DeleteLayer
+import com.example.infinitedraw.engine.MoveLayer
+import com.example.infinitedraw.engine.RemoveStrokes
+import com.example.infinitedraw.engine.UndoStack
 import com.example.infinitedraw.model.BrushType
-import com.example.infinitedraw.model.CommandStack
 import com.example.infinitedraw.model.Layer
 import com.example.infinitedraw.model.Project
-import com.example.infinitedraw.model.RemoveLayerCommand
-import com.example.infinitedraw.model.ReorderLayerCommand
 import com.example.infinitedraw.model.Stroke
 import com.example.infinitedraw.model.StrokePoint
 import com.example.infinitedraw.model.ZoomLevel
+import com.example.infinitedraw.storage.Autosave
+import kotlin.math.hypot
+
+enum class Tool { PEN, MARKER, AIRBRUSH, ERASER }
 
 class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     val engine = InfiniteZoomEngine()
     val project = Project("Untitled", mutableListOf(Layer(1, "Layer 1")))
-    val commands = CommandStack()
+    val commands = UndoStack()
+    val autosave = Autosave(app, project, engine)
     var fingerDraws = false
     var redraw: (() -> Unit)? = null
 
@@ -30,7 +36,11 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     var activeLayerId = 1L
         set(value) { field = value; redraw?.invoke() }
     var usePressure = true
-    var eraserMode = false          // toggled by UI or hardware eraser
+    var eraserMode: Boolean
+        get() = tool == Tool.ERASER
+        set(v) { tool = if (v) Tool.ERASER else Tool.PEN }   // hardware eraser toggle
+    var tool = Tool.PEN             // active tool; ERASER clears strokes
+    val pendingRemoved = mutableListOf<Stroke>()   // strokes marked by the eraser, hidden until commit
 
     fun activeLayer(): Layer? = project.layers.firstOrNull { it.id == activeLayerId }
 
@@ -41,6 +51,8 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         val l = engine.screenToLocal(sx, sy, w, h)
         activeLevel = engine.camera.level
         active = ArrayList<StrokePoint>().also { it.add(StrokePoint(l[0].toFloat(), l[1].toFloat(), p)) }
+        pendingRemoved.clear()
+        if (tool == Tool.ERASER) eraseAt(l[0].toFloat(), l[1].toFloat())
         redraw?.invoke()
     }
 
@@ -52,32 +64,83 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         val minDist = 1.5 / engine.camera.zoom
         if (dx * dx + dy * dy < minDist * minDist) return
         a.add(StrokePoint(l[0].toFloat(), l[1].toFloat(), p))
+        if (tool == Tool.ERASER) eraseAt(l[0].toFloat(), l[1].toFloat())
         redraw?.invoke()
+    }
+
+    /** Mark every stroke in the current level (on an unlocked, visible layer) that the eraser touches. */
+    private fun eraseAt(lx: Float, ly: Float) {
+        val lvl = engine.camera.level
+        val rad = brushSizePx / engine.camera.zoom.toFloat() / 2f
+        val layerIds = project.layers.filter { it.visible && !it.locked }.map { it.id }.toHashSet()
+        for (s in lvl.strokes) {
+            if (s.layerId !in layerIds || s in pendingRemoved) continue
+            if (s.width <= 0f) continue
+            val hitR = rad + s.width / 2f
+            val b = s.bounds
+            if (lx < b[0] - hitR || lx > b[2] + hitR || ly < b[1] - hitR || ly > b[3] + hitR) continue  // bounds cull
+            var hit = false
+            if (s.points.size == 1) {
+                val q = s.points[0]
+                hit = hypot(lx - q.x, ly - q.y) < hitR
+            } else {
+                for (i in 0 until s.points.size - 1) {
+                    val a = s.points[i]; val c = s.points[i + 1]
+                    if (distPointSeg(lx, ly, a.x, a.y, c.x, c.y) < hitR) { hit = true; break }
+                }
+            }
+            if (hit) pendingRemoved.add(s)
+        }
+    }
+
+    fun distPointSeg(px: Float, py: Float, ax: Float, ay: Float, bx: Float, by: Float): Float {
+        val dx = bx - ax; val dy = by - ay
+        val len2 = dx * dx + dy * dy
+        val t = if (len2 == 0f) 0f else (((px - ax) * dx + (py - ay) * dy) / len2).coerceIn(0f, 1f)
+        return hypot(px - (ax + t * dx), py - (ay + t * dy))
     }
 
     fun endStroke() {
         val a = active; val lvl = activeLevel
         active = null
         if (a != null && lvl != null && a.isNotEmpty()) {
-            val type = brushType
-            val stroke = Stroke(
-                engine.nextStrokeId++, activeLayerId,
-                type,
-                color, brushSizePx / engine.camera.zoom.toFloat(), usePressure, a.toList()
-            )
-            commands.push(AddStrokeCommand(lvl, stroke))
-            if (color !in recentColors) {
-                recentColors.add(0, color)
-                if (recentColors.size > 8) recentColors.removeAt(recentColors.size - 1)
+            // Eraser never creates a stroke; it only removes.
+            if (tool != Tool.ERASER) {
+                val type = when (tool) {
+                    Tool.MARKER -> BrushType.MARKER
+                    Tool.AIRBRUSH -> BrushType.AIRBRUSH
+                    else -> BrushType.PEN
+                }
+                val stroke = Stroke(
+                    engine.nextStrokeId++, activeLayerId,
+                    type,
+                    color,   // marker/airbrush alpha is applied at render time
+                    brushSizePx / engine.camera.zoom.toFloat(),
+                    usePressure && tool == Tool.PEN, a.toList()
+                )
+                commands.exec(AddStroke(lvl.id, stroke), engine, project)
+                autosave.schedule()
+                if (color !in recentColors) {
+                    recentColors.add(0, color)
+                    if (recentColors.size > 8) recentColors.removeAt(recentColors.size - 1)
+                }
             }
+        }
+        if (pendingRemoved.isNotEmpty() && lvl != null) {
+            val removed = pendingRemoved.toList()
+            commands.exec(RemoveStrokes(lvl.id, removed), engine, project)
+            pendingRemoved.clear()
+            autosave.schedule()
         }
         redraw?.invoke()
     }
 
-    fun cancelStroke() { active = null; redraw?.invoke() }
+    fun cancelStroke() { active = null; pendingRemoved.clear(); redraw?.invoke() }
 
-    fun undo() { if (commands.undo()) redraw?.invoke() }
-    fun redo() { if (commands.redo()) redraw?.invoke() }
+    fun undo() { commands.undo(engine, project); redraw?.invoke(); autosave.schedule() }
+    fun redo() { commands.redo(engine, project); redraw?.invoke(); autosave.schedule() }
+
+    fun saveNow() = autosave.flushNow()
 
     // ---- images ----
     val bitmaps = HashMap<Long, android.graphics.Bitmap>()
@@ -115,7 +178,7 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
                         (l[0] - imgW / 2).toFloat(), (l[1] - imgH / 2).toFloat(),
                         imgW.toFloat(), imgH.toFloat()
                     )
-                    commands.push(AddImageCommand(cam.level, img))
+                    commands.exec(AddImage(cam.level.id, img), engine, project)
                     redraw?.invoke()
                 }
             } catch (_: Exception) {
@@ -129,14 +192,15 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addLayer() {
         val layer = Layer(nextLayerId++, "Layer ${project.layers.size + 1}")
-        commands.push(AddLayerCommand(project, layer))
+        commands.exec(AddLayer(layer, project.layers.size), engine, project)
         activeLayerId = layer.id
     }
 
     fun removeLayer(id: Long) {
         if (project.layers.size <= 1) return     // must keep at least one
         val layer = project.layers.firstOrNull { it.id == id } ?: return
-        commands.push(RemoveLayerCommand(project, layer))
+        val removedStrokes = engine.levels.values.associate { it.id to it.strokes.filter { s -> s.layerId == layer.id } }
+        commands.exec(DeleteLayer(layer, project.layers.indexOf(layer), removedStrokes), engine, project)
         if (activeLayerId == id) activeLayerId = project.layers.last().id
     }
 
@@ -158,6 +222,6 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         val target = if (up) idx + 1 else idx - 1
         if (target < 0 || target >= project.layers.size) return
         val layer = project.layers[idx]
-        commands.push(ReorderLayerCommand(project, layer, idx, target))
+        commands.exec(MoveLayer(idx, target), engine, project)
     }
 }
