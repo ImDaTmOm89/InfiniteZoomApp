@@ -47,6 +47,16 @@ import androidx.lifecycle.LifecycleEventObserver
 
 enum class PanelType { COLOR, BRUSH, LAYERS, PAPER }
 
+@Composable
+fun toolbarButton(label: String, onClick: () -> Unit) {
+    Text(
+        label,
+        modifier = Modifier
+            .padding(4.dp)
+            .clickable(onClick = onClick)
+    )
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,62 +103,51 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
             update = { v -> viewW = v.width; viewH = v.height }
         )
 
-        // Toolbar (top)
-        Row(
+        // Toolbar (left column, starts below the debug level/zoom text)
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(4.dp),
-            horizontalArrangement = Arrangement.Start,
-            verticalAlignment = Alignment.CenterVertically
+                .align(Alignment.CenterStart)
+                .padding(start = 12.dp, top = 110.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Text("U", Modifier
-                .padding(8.dp)
-                .clickable { vm.undo() })
-            Text("R", Modifier
-                .padding(8.dp)
-                .clickable { vm.redo() })
-            Text("C", Modifier
-                .padding(8.dp)
-                .clickable { panel = if (panel == PanelType.COLOR) null else PanelType.COLOR })
-            Text("B", Modifier
-                .padding(8.dp)
-                .clickable { panel = if (panel == PanelType.BRUSH) null else PanelType.BRUSH })
-            Text("L", Modifier
-                .padding(8.dp)
-                .clickable { panel = if (panel == PanelType.LAYERS) null else PanelType.LAYERS })
-            Text("P", Modifier
-                .padding(8.dp)
-                .clickable { panel = if (panel == PanelType.PAPER) null else PanelType.PAPER })
-            Text(if (fingerDraws) "F+" else "F-", Modifier
-                .padding(8.dp)
-                .clickable { fingerDraws = !fingerDraws; vm.fingerDraws = fingerDraws })
-            Text("⟲", Modifier
-                .padding(8.dp)
-                .clickable {
-                    vm.engine.camera.zoom = 1.0; vm.engine.camera.cx = 0.0; vm.engine.camera.cy = 0.0
-                    vm.redraw?.invoke()
-                })
-            // Phase 2 raster tools; the active tool is marked with a bullet
-            listOf("O" to com.example.infinitedraw.ui.Tool.OIL,
-                   "M" to com.example.infinitedraw.ui.Tool.MIX,
-                   "S" to com.example.infinitedraw.ui.Tool.SMUDGE,
-                   "RE" to com.example.infinitedraw.ui.Tool.RERASER).forEach { (label, t) ->
-                Text(if (vm.tool == t) "$label●" else label, Modifier
-                    .padding(8.dp)
-                    .clickable { vm.tool = t })
+            toolbarButton("Undo") { vm.undo() }
+            toolbarButton("Redo") { vm.redo() }
+            toolbarButton(if (panel == PanelType.COLOR) "Color ●" else "Color") {
+                panel = if (panel == PanelType.COLOR) null else PanelType.COLOR
             }
-            Text("Img", Modifier
-                .padding(8.dp)
-                .clickable {
-                    imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                })
-            Text("⬇", Modifier
-                .padding(8.dp)
-                .clickable {
-                    vm.exportPng(viewW, viewH) { path ->
-                        if (path != null) android.widget.Toast.makeText(context, "Saved: $path", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                })
+            toolbarButton(if (panel == PanelType.BRUSH) "Brush ●" else "Brush") {
+                panel = if (panel == PanelType.BRUSH) null else PanelType.BRUSH
+            }
+            toolbarButton(if (panel == PanelType.LAYERS) "Layers ●" else "Layers") {
+                panel = if (panel == PanelType.LAYERS) null else PanelType.LAYERS
+            }
+            toolbarButton(if (panel == PanelType.PAPER) "Paper ●" else "Paper") {
+                panel = if (panel == PanelType.PAPER) null else PanelType.PAPER
+            }
+            toolbarButton(if (fingerDraws) "Finger: On" else "Finger: Off") {
+                fingerDraws = !fingerDraws; vm.fingerDraws = fingerDraws
+            }
+            toolbarButton("Reset View") {
+                vm.engine.camera.zoom = 1.0; vm.engine.camera.cx = 0.0; vm.engine.camera.cy = 0.0
+                vm.redraw?.invoke()
+            }
+            // Raster tools; the active one is marked with a bullet
+            listOf("Oil" to com.example.infinitedraw.ui.Tool.OIL,
+                   "Mix" to com.example.infinitedraw.ui.Tool.MIX,
+                   "Smudge" to com.example.infinitedraw.ui.Tool.SMUDGE,
+                   "Raster Erase" to com.example.infinitedraw.ui.Tool.RERASER).forEach { (label, t) ->
+                toolbarButton(if (vm.tool == t) "$label ●" else label) { vm.tool = t }
+            }
+            toolbarButton("Insert Image") {
+                imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }
+            toolbarButton("Export PNG") {
+                vm.exportPng(viewW, viewH) { path ->
+                    android.widget.Toast.makeText(context,
+                        if (path != null) "Saved: $path" else "Export failed",
+                        android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
         }
 
         // Left strip: size slider
