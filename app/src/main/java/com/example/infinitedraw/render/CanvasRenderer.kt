@@ -52,17 +52,23 @@ class CanvasRenderer {
         val firstY = y0 - Math.floor(y0 / sp) * sp
         var gx = firstX
         while (gx <= w) {
-            var gy = firstY
-            while (gy <= h) {
-                if (paper.pattern == com.example.infinitedraw.model.PaperPattern.DOTS) {
+            if (paper.pattern == com.example.infinitedraw.model.PaperPattern.GRID) {
+                canvas.drawLine(gx.toFloat(), 0f, gx.toFloat(), h.toFloat(), paint)
+            } else {
+                var gy = firstY
+                while (gy <= h) {
                     canvas.drawPoint(gx.toFloat(), gy.toFloat(), paint)
-                } else {
-                    canvas.drawLine(gx.toFloat(), 0f, gx.toFloat(), h.toFloat(), paint)
-                    canvas.drawLine(0f, gy.toFloat(), w.toFloat(), gy.toFloat(), paint)
+                    gy += sp
                 }
-                gy += sp
             }
             gx += sp
+        }
+        if (paper.pattern == com.example.infinitedraw.model.PaperPattern.GRID) {
+            var gy = firstY
+            while (gy <= h) {
+                canvas.drawLine(0f, gy.toFloat(), w.toFloat(), gy.toFloat(), paint)
+                gy += sp
+            }
         }
     }
 

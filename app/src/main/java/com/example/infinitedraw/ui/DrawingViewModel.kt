@@ -20,6 +20,9 @@ import com.example.infinitedraw.model.Stroke
 import com.example.infinitedraw.model.StrokePoint
 import com.example.infinitedraw.model.ZoomLevel
 import com.example.infinitedraw.storage.Autosave
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import kotlin.math.hypot
 
 enum class Tool { PEN, MARKER, AIRBRUSH, ERASER, OIL, MIX, SMUDGE, RERASER }
@@ -42,13 +45,20 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     var activeLayerId = 1L
         set(value) { field = value; redraw?.invoke() }
     var usePressure = true
+    private var preEraserTool = Tool.PEN   // tool to restore after hardware eraser lifts
     var eraserMode: Boolean
         get() = tool == Tool.ERASER
-        set(v) { tool = if (v) Tool.ERASER else Tool.PEN }   // hardware eraser toggle
+        set(v) {   // hardware eraser toggle (vector tools)
+            if (v) { preEraserTool = if (tool.isRaster()) Tool.PEN else tool; tool = Tool.ERASER }
+            else tool = preEraserTool
+        }
     var rasterEraserMode: Boolean
         get() = tool == Tool.RERASER
-        set(v) { tool = if (v) Tool.RERASER else Tool.PEN }  // hardware eraser in raster tools
-    var tool = Tool.PEN             // active tool; ERASER clears strokes
+        set(v) {   // hardware eraser in raster tools
+            if (v) { preEraserTool = if (!tool.isRaster() && tool != Tool.ERASER) tool else Tool.OIL; tool = Tool.RERASER }
+            else tool = preEraserTool
+        }
+    var tool: Tool by androidx.compose.runtime.mutableStateOf(Tool.PEN)   // active tool; ERASER clears strokes
     val pendingRemoved = mutableListOf<Stroke>()   // strokes marked by the eraser, hidden until commit
 
     /** Phase 2b: pre-dab pixel snapshots collected while a raster stroke is active. */
@@ -60,6 +70,12 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     var activeLevel: ZoomLevel? = null
 
     fun beginStroke(sx: Float, sy: Float, p: Float, w: Int, h: Int) {
+        // Plan Step 10: the active layer must be visible and unlocked to draw.
+        val layer = activeLayer()
+        if (layer == null || !layer.visible || layer.locked) {
+            active = null
+            return
+        }
         val l = engine.screenToLocal(sx, sy, w, h)
         activeLevel = engine.camera.level
         active = ArrayList<StrokePoint>().also { it.add(StrokePoint(l[0].toFloat(), l[1].toFloat(), p)) }

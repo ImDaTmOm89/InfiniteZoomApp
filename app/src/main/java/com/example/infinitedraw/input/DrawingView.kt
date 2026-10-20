@@ -3,6 +3,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.view.MotionEvent
 import android.view.View
+import com.example.infinitedraw.ui.isRaster
 import com.example.infinitedraw.render.CanvasRenderer
 import com.example.infinitedraw.ui.DrawingViewModel
 import kotlin.math.hypot
@@ -27,7 +28,12 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
     }
     private fun startDraw(e: MotionEvent, i: Int) {
         mode = Mode.DRAW
-        vm.eraserMode = isEraserTool(e, i)
+        if (isEraserTool(e, i)) {
+            // Hardware eraser: pick the raster eraser if a raster tool is active,
+            // otherwise the vector eraser (vm.eraserMode). The setters remember
+            // which tool to return to when the eraser tip lifts.
+            if (vm.tool.isRaster()) vm.rasterEraserMode = true else vm.eraserMode = true
+        }
         vm.beginStroke(e.getX(i), e.getY(i), e.getPressure(i), width, height)
     }
     private fun startNavigate(e: MotionEvent) { mode = Mode.NAVIGATE; lastCount = -1; navigate(e) }
