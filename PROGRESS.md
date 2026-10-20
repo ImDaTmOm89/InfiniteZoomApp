@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-Last updated: 2026-10-20 (Phase 2a committed)
+Last updated: 2026-10-20 (Phase 2b committed)
 
 ## Known issues
 
@@ -11,6 +11,16 @@ Last updated: 2026-10-20 (Phase 2a committed)
   rotation) still need a manual run on the tablet.
 
 ## Finished steps
+- Phase 2b — raster undo/redo — 2026-10-20 (commit `ea964c1`). Raster dabs are
+  now undoable: `RasterTiles.TileSnapshot` (key, cx/cy/r rect, pixels) captures
+  pre-dab pixels into `vm.rasterBefore` during OIL/MIX/RERASER strokes;
+  `endStroke` recaptures the same rects as 'after' and pushes
+  `engine.RasterCommand(before, after)` onto the UndoStack — undo restores
+  before, redo restores after (no re-stamping, robust for overlaps). Fresh
+  tiles get a full-tile empty snapshot. SMUDGE stays exempt (snapshots drift
+  under neighboring dabs); cancelStroke rolls raster tiles back. Smudge
+  strength kept at MIX/SMUDGE/SMUDGE_PICK = 0.65/0.30/0.55 (unchanged; tune on
+  device). Build + tests pass.
 - Phase 2a — raster tile brushes — 2026-10-20 (commit `4056d6d`). New
   `render/RasterTiles.kt`: 256x256 ARGB tiles keyed (levelId, layerId, tx, ty),
   created lazily where painted. Tools OIL/MIX (mixing dabs, coverage-weighted
@@ -66,33 +76,33 @@ Last updated: 2026-10-20 (Phase 2a committed)
 
 ## Step in progress
 
-- (none) Steps 3-17 complete; Step 18 committed; Phase 2a (raster tiles)
-  committed. Next: Phase 2b — undo/redo support for raster dabs, tile-only
-  in-progress preview, tuning smudge strength, then user testing.
+- (none) Phase 2a + 2b committed. Remaining Phase 2 polish: on-device tuning
+  of mix/smudge strength, memory cap on tile cache (LRU evict non-visible
+  tiles), tile-only in-progress preview. Then Phase 3 / user testing.
 
 ## Next steps / Context (resume cold)
 
-- Phase 2a committed (`4056d6d`). Files: `render/RasterTiles.kt` (new, ~215
-  lines: TileKey/Tile, tiles HashMap, dab/erase, mixDab/smudgeDab),
-  `ui/DrawingViewModel.kt` (Tool enum now PEN/MARKER/AIRBRUSH/ERASER/OIL/MIX/
-  SMUDGE/RERASER + `Tool.isRaster()` extension; rasterDab private fn; raster
-  tools skip vector-stroke creation in endStroke), `render/CanvasRenderer.kt`
-  (drawRasterTiles per level+layer inside drawLevelContent),
-  `storage/ProjectStorage.kt` (saveTiles/loadTiles PNG round-trip,
-  RasterTiles.clearAll on load), `MainActivity.kt` (O/M/S/RE toolbar buttons).
-- Known limitation: raster dabs are NOT undoable (tiles bypass the UndoStack);
-  mixing uses a simple lerp blend with coverage-weighted strength — may need
-  tuning. Smudge on empty tiles is a no-op. Tiles are per-layer, so layer
-  opacity/blend applies.
-- Raster tiles look sharp near the zoom they were painted at (level-local px);
-  zooming far out/in scales them (filterBitmap on).
-- User-visible test: paint with O/M, drag S over wet colors to smudge, RE to
-  erase raster paint only, save/reopen project, check tiles restore.
-- Earlier context (still relevant): Step 18 manual on-device checks pending;
-  export PNG writes to getExternalFilesDir/Pictures (deviation from SAF plan);
-  no project-picker UI calls ProjectStorage.listProjects() found.
-- Verified: `gradlew assembleDebug` BUILD SUCCESSFUL, `gradlew test` BUILD
-  SUCCESSFUL.
+- Phase 2b (`ea964c1`): `render/RasterTiles.kt` (TileSnapshot with cx/cy/r,
+  snapshot(), restore(), dab/erase take `before: MutableList<TileSnapshot>?`,
+  fresh-tile full-empty snapshot), `engine/Commands.kt` (RasterCommand
+  before/after lists), `ui/DrawingViewModel.kt` (rasterBefore list cleared at
+  beginStroke, filled by rasterDab; endStroke captures after via
+  snapshot(s.key, s.cx, s.cy, s.r) and execs RasterCommand; cancelStroke
+  restores; SMUDGE passes before=null). Undo/redo buttons already existed and
+  call vm.undo()/vm.redo().
+- Smudge remains non-undoable by design; if undoing smudge is wanted later,
+  snapshot before AND after per dab and replay the sequence in reverse.
+- Phase 2a context (files, tool list, PNG tile persistence, O/M/S/RE buttons)
+  still applies — see Phase 2a entry below.
+- Known limitation: raster snapshots hold pixels for the whole stroke; long
+  strokes over many tiles cost memory (one small rect per dab per tile). If
+  memory becomes an issue, coalesce per-tile before snapshots (union rect).
+- User-visible test: paint with OIL/MIX, undo (strokes vanish), redo (return);
+  RERASER then undo restores erased pixels; cancel mid-stroke undoes the
+  partial dabs.
+- Earlier context: Step 18 manual on-device checks pending; export PNG to
+  getExternalFilesDir/Pictures; no project-picker UI calling
+  ProjectStorage.listProjects().
 
 ## Verification (this audit)
 
