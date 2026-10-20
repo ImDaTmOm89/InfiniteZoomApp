@@ -115,6 +115,12 @@ Last updated: 2026-10-20 (toolbar UI rework committed)
 
 ## Next steps / Context (resume cold)
 
+- Toolbar positioning follow-up (`7fb3c1e`): column is now anchored
+  `Alignment.TopStart` with `padding(start = 12.dp, top = 96.dp)` — sits just
+  under the debug level/zoom text (drawn at y=60 with 40px font) and no longer
+  vertically centered, so it can't cover the center-left size slider. If the
+  column still reaches the slider on short screens, move the slider to
+  bottom-start.
 - Toolbar rework `0830f56` touched only `MainActivity.kt`: Column at
   `Alignment.CenterStart`, `padding(start = 12.dp, top = 110.dp)` — the 110.dp
   offset must clear the 40px debug text; if the debug overlay is removed later,
