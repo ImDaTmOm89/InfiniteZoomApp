@@ -73,15 +73,49 @@ object RasterTiles {
 
     fun clearAll() = tiles.clear()
 
+    // ---- undo/redo snapshots (Phase 2b) --------------------------------------
+
+    /** Snapshot of the touched region of a tile. Taken before dab/erase, used by RasterCommand. */
+    class TileSnapshot(val key: TileKey, val cx: Float, val cy: Float, val r: Float,
+                       val x0: Int, val y0: Int, val w: Int, val h: Int, val pixels: IntArray) {
+        fun restore(t: Tile) {
+            t.bitmap.setPixels(pixels, 0, w, x0, y0, w, h)
+            t.dirty = true
+        }
+    }
+
+    /**
+     * Capture the affected rect of a tile as pixels. Rect is the level-local
+     * circle bounding box (cx, cy, r) in tile-local coords; clipped to the tile.
+     */
+    fun snapshot(key: TileKey, cx: Float, cy: Float, r: Float): TileSnapshot? {
+        val t = tiles[key] ?: return null
+        val x0 = max(0, (cx - r).toInt()); val y0 = max(0, (cy - r).toInt())
+        val x1 = min(TILE - 1, (cx + r).toInt()); val y1 = min(TILE - 1, (cy + r).toInt())
+        if (x1 < x0 || y1 < y0) return null
+        val w = x1 - x0 + 1; val h = y1 - y0 + 1
+        val px = IntArray(w * h)
+        t.bitmap.getPixels(px, x0, w, x0, y0, w, h)
+        return TileSnapshot(key, cx, cy, r, x0, y0, w, h, px)
+    }
+
+    /** Restore a list of snapshots (used by RasterCommand apply/revert). */
+    fun restore(snaps: List<TileSnapshot>) {
+        for (s in snaps) tiles[s.key]?.let { s.restore(it) }
+    }
+
     // ---- dab stamping -------------------------------------------------------
 
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
 
     /**
      * Stamp one raster dab at level-local (lx, ly) with radius r (level-local
-     * units). mode: 0 = oil/mix, 1 = smudge.
+     * units). mode: 0 = oil/mix, 1 = smudge. `before` collects pre-dab
+     * snapshots for undo. `stamp` controls whether the dab is actually applied
+     * (false = capture only, used to snapshot freshly-created tiles).
      */
-    fun dab(level: ZoomLevel, layerId: Long, lx: Float, ly: Float, r: Float, color: Int, mode: Int) {
+    fun dab(level: ZoomLevel, layerId: Long, lx: Float, ly: Float, r: Float, color: Int, mode: Int,
+            before: MutableList<TileSnapshot>? = null) {
         if (r <= 0f) return
         val d = r * 2f
         val txMin = Math.floor((lx - r) / TILE.toDouble()).toInt()
@@ -90,7 +124,21 @@ object RasterTiles {
         val tyMax = Math.floor((ly + r) / TILE.toDouble()).toInt()
         for (tx in txMin..txMax) {
             for (ty in tyMin..tyMax) {
-                val t = tileFor(TileKey(level.id, layerId, tx, ty))
+                val key = TileKey(level.id, layerId, tx, ty)
+                if (before != null && tiles[key] == null) {
+                    // Fresh tile: full-tile empty snapshot so undo can drop it back to empty.
+                    tileFor(key)
+                    before.add(TileSnapshot(key, 0f, 0f, TILE.toFloat(), 0, 0, TILE, TILE, IntArray(TILE * TILE)))
+                    if (mode == 0) {
+                        mixDab(tiles[key]!!, lx - tx * TILE, ly - ty * TILE, r, color)
+                        tiles[key]!!.dirty = true
+                    } else {
+                        // smudge on a fresh tile is a no-op, tile stays empty
+                    }
+                    continue
+                }
+                val t = tileFor(key)
+                if (before != null) snapshot(key, lx - tx * TILE, ly - ty * TILE, r)?.let { before.add(it) }
                 val ox = tx * TILE.toFloat()
                 val oy = ty * TILE.toFloat()
                 if (mode == 1) smudgeDab(t, lx - ox, ly - oy, r)
@@ -183,7 +231,8 @@ object RasterTiles {
     }
 
     /** Erase raster pixels in a level-local circle (raster eraser, mode 2). */
-    fun erase(levelId: Int, layerId: Long, lx: Float, ly: Float, r: Float) {
+    fun erase(levelId: Int, layerId: Long, lx: Float, ly: Float, r: Float,
+              before: MutableList<TileSnapshot>? = null) {
         val txMin = Math.floor((lx - r) / TILE.toDouble()).toInt()
         val txMax = Math.floor((lx + r) / TILE.toDouble()).toInt()
         val tyMin = Math.floor((ly - r) / TILE.toDouble()).toInt()
@@ -192,6 +241,7 @@ object RasterTiles {
             for (ty in tyMin..tyMax) {
                 val t = tiles[TileKey(levelId, layerId, tx, ty)] ?: continue
                 val ox = tx * TILE.toFloat(); val oy = ty * TILE.toFloat()
+                if (before != null) snapshot(t.key, lx - ox, ly - oy, r)?.let { before.add(it) }
                 val x0 = max(0, (lx - ox - r).toInt()); val x1 = min(TILE - 1, (lx - ox + r).toInt())
                 val y0 = max(0, (ly - oy - r).toInt()); val y1 = min(TILE - 1, (ly - oy + r).toInt())
                 if (x1 < x0 || y1 < y0) continue

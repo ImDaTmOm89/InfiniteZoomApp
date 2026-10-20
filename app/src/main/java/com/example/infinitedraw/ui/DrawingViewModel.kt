@@ -10,6 +10,7 @@ import com.example.infinitedraw.engine.AddLayer
 import com.example.infinitedraw.engine.AddStroke
 import com.example.infinitedraw.engine.DeleteLayer
 import com.example.infinitedraw.engine.MoveLayer
+import com.example.infinitedraw.engine.RasterCommand
 import com.example.infinitedraw.engine.RemoveStrokes
 import com.example.infinitedraw.engine.UndoStack
 import com.example.infinitedraw.model.BrushType
@@ -50,6 +51,9 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     var tool = Tool.PEN             // active tool; ERASER clears strokes
     val pendingRemoved = mutableListOf<Stroke>()   // strokes marked by the eraser, hidden until commit
 
+    /** Phase 2b: pre-dab pixel snapshots collected while a raster stroke is active. */
+    val rasterBefore = mutableListOf<com.example.infinitedraw.render.RasterTiles.TileSnapshot>()
+
     fun activeLayer(): Layer? = project.layers.firstOrNull { it.id == activeLayerId }
 
     var active: ArrayList<StrokePoint>? = null
@@ -60,6 +64,7 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         activeLevel = engine.camera.level
         active = ArrayList<StrokePoint>().also { it.add(StrokePoint(l[0].toFloat(), l[1].toFloat(), p)) }
         pendingRemoved.clear()
+        rasterBefore.clear()
         if (tool.isRaster()) {
             rasterDab(l[0].toFloat(), l[1].toFloat(), p)
         } else if (tool == Tool.ERASER) {
@@ -148,11 +153,27 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
             pendingRemoved.clear()
             autosave.schedule()
         }
-        if (tool.isRaster()) autosave.schedule()   // flush raster tiles to PNGs
+        if (rasterBefore.isNotEmpty()) {
+            // Phase 2b: capture post-stroke pixels over the same rects, then push undo.
+            val after = rasterBefore.mapNotNull { s ->
+                com.example.infinitedraw.render.RasterTiles.snapshot(s.key, s.cx, s.cy, s.r)
+            }
+            if (after.isNotEmpty()) commands.exec(
+                RasterCommand(rasterBefore.toList(), after), engine, project)
+            rasterBefore.clear()
+            autosave.schedule()   // flush raster tiles to PNGs
+        }
         redraw?.invoke()
     }
 
-    fun cancelStroke() { active = null; pendingRemoved.clear(); redraw?.invoke()
+    fun cancelStroke() {
+        active = null; pendingRemoved.clear()
+        // Cancelled raster stroke: roll tiles back to the pre-stroke state.
+        if (rasterBefore.isNotEmpty()) {
+            com.example.infinitedraw.render.RasterTiles.restore(rasterBefore)
+            rasterBefore.clear()
+        }
+        redraw?.invoke()
     }
 
     /**
@@ -164,11 +185,14 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         val lvl = activeLevel ?: return
         val zoom = engine.camera.zoom.toFloat()
         val r = (brushSizePx / zoom / 2f) * if (tool == Tool.OIL || tool == Tool.MIX) 0.15f + 0.85f * pressure else 1f
+        val before = if (tool == Tool.SMUDGE) null else rasterBefore   // smudge not undoable (drifts)
         when (tool) {
-            Tool.OIL -> com.example.infinitedraw.render.RasterTiles.dab(lvl, activeLayerId, lx, ly, r, color, 0)
-            Tool.MIX -> com.example.infinitedraw.render.RasterTiles.dab(lvl, activeLayerId, lx, ly, r, color, 0)
-            Tool.SMUDGE -> com.example.infinitedraw.render.RasterTiles.dab(lvl, activeLayerId, lx, ly, r, color, 1)
-            Tool.RERASER -> com.example.infinitedraw.render.RasterTiles.erase(lvl.id, activeLayerId, lx, ly, r)
+            Tool.OIL, Tool.MIX -> com.example.infinitedraw.render.RasterTiles.dab(
+                lvl, activeLayerId, lx, ly, r, color, 0, before)
+            Tool.RERASER -> com.example.infinitedraw.render.RasterTiles.erase(
+                lvl.id, activeLayerId, lx, ly, r, before)
+            Tool.SMUDGE -> com.example.infinitedraw.render.RasterTiles.dab(
+                lvl, activeLayerId, lx, ly, r, color, 1)
             else -> {}
         }
     }

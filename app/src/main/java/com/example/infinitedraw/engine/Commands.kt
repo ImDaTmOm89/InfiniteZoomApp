@@ -62,6 +62,24 @@ class MoveLayer(val from: Int, val to: Int) : Command {
     }
 }
 
+/**
+ * Phase 2b: undo/redo for raster tile painting. Raster dabs are applied live
+ * to tile bitmaps, so undo/redo swaps between captured 'before' and 'after'
+ * pixel snapshots instead of re-stamping dabs (robust against overlapping
+ * strokes on the same region).
+ */
+class RasterCommand(
+    val before: List<com.example.infinitedraw.render.RasterTiles.TileSnapshot>,
+    val after: List<com.example.infinitedraw.render.RasterTiles.TileSnapshot>
+) : Command {
+    override fun apply(e: InfiniteZoomEngine, p: Project) {   // redo
+        com.example.infinitedraw.render.RasterTiles.restore(after)
+    }
+    override fun revert(e: InfiniteZoomEngine, p: Project) {  // undo
+        com.example.infinitedraw.render.RasterTiles.restore(before)
+    }
+}
+
 class UndoStack {
     private val undo = ArrayDeque<Command>(); private val redo = ArrayDeque<Command>()
     fun exec(c: Command, e: InfiniteZoomEngine, p: Project) { c.apply(e, p); undo.addLast(c); redo.clear() }
