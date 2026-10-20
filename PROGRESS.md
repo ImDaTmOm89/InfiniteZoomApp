@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-Last updated: 2026-10-20 (Phase 2 polish committed)
+Last updated: 2026-10-20 (Phase 2 thread-safety fix committed)
 
 ## Known issues
 
@@ -11,6 +11,12 @@ Last updated: 2026-10-20 (Phase 2 polish committed)
   rotation) still need a manual run on the tablet.
 
 ## Finished steps
+- Phase 2 fix — tile-cache thread safety — 2026-10-20 (commit `b156f28`).
+  RasterTiles now guards `tiles`/`evictedKeys` with a lock: tileFor, clearAll,
+  evict synchronized; new tilesSnapshot() gives render/save loops a stable
+  copy. CanvasRenderer and ProjectStorage.saveTiles iterate the snapshot. The
+  flagged CME risk (autosave IO thread evicting while UI draws) is resolved.
+  Build + tests pass.
 - Phase 2 polish — tile memory cap — 2026-10-20 (commit `721a48b`).
   `RasterTiles`: Tile.lastUse, touch(), MAX_TILES=64 (~16 MB), evict() drops
   only NON-DIRTY tiles (recycles bitmaps, keys to evictedKeys set),
@@ -84,30 +90,26 @@ Last updated: 2026-10-20 (Phase 2 polish committed)
 
 ## Step in progress
 
-- (none) Phase 2a/2b/polish committed. Remaining Phase 2 items are on-device:
-  mix/smudge strength tuning, perf check of evict/reload during fast panning.
-  Then PLAN.md Phase 3 or user testing.
+- (none). PLAN.md is fully complete (Steps 1-18 + Phase 2 including undo,
+  memory cap, thread safety). No further steps are defined in plan.md. Any
+  next work needs new user direction (e.g. smudge tuning results from the
+  tablet, bug fixes, or a new feature request).
 
 ## Next steps / Context (resume cold)
 
-- Phase 2 polish (`721a48b`): `render/RasterTiles.kt` (lastUse/touch, MAX_TILES,
-  evict() non-dirty only + evictedKeys, loadTile() single-PNG reload,
-  isEvicted()), `render/CanvasRenderer.kt` (drawRasterTiles: rt local alias,
-  touch on draw, reload recycled bitmaps via loadTile before drawing),
-  `storage/ProjectStorage.kt` (save() calls RasterTiles.evict() after saveTiles).
-- Caution: evict() runs on the autosave IO thread while the UI thread draws —
-  current code is not synchronized; acceptable for now, revisit if crashes
-  appear (a ConcurrentModificationException in RasterTiles would be the sign).
-- Undo snapshots reference tile bitmaps only via pixel copies, so eviction
-  does not break undo/redo (snapshot.restore re-creates pixels on the current
-  tile if present; if the tile was evicted, restore is a no-op — the PNG on
-  disk already matches the post-undo state only if the last save happened
-  after undo. Edge case, unlikely, flagged).
-- User test: paint >64 tiles (huge strokes across many tiles), confirm no
-  OOM, old areas redraw after scrolling back (reload from PNG), autosave
-  flushes work.
-- Earlier context: Step 18 manual checks pending; Phase 2b undo tests pending;
-  export PNG to getExternalFilesDir/Pictures; no project-picker UI.
+- Plan exhausted. Commits so far (latest first): b156f28 (thread-safety),
+  c281e32 (polish progress), 721a48b (LRU cap), 1d46099 (2b progress),
+  ea964c1 (2b undo), 24e559e (2a progress), 4056d6d (2a), f215b46/e2defeb
+  (Step 18), 71adc27/c371ac0 (Step 7-16 bundle).
+- Outstanding on-device items (user): all Step 18 manual checks; Phase 2
+  tests (OIL/MIX/SMUDGE/RERASER painting, undo/redo of raster dabs, >64-tile
+  eviction, save/reopen tile restore); mix/smudge strength tuning feedback.
+- Known technical edge cases (documented, low priority): undo restore onto an
+  evicted tile is a no-op if the tile was evicted between stroke and undo;
+  PNG export writes to getExternalFilesDir/Pictures (SAF deviation); no
+  project-picker UI exists (ProjectStorage.listProjects unused).
+- If the user says "go" with no other context, ask what they want next — the
+  plan has no remaining steps.
 
 ## Verification (this audit)
 
