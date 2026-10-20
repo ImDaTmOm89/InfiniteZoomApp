@@ -41,6 +41,8 @@ object RasterTiles {
 
     class Tile(val key: TileKey, var bitmap: Bitmap, val canvas: Canvas) {
         var dirty = true
+        /** Phase 2 polish: last time this tile was touched (drawn or painted), for LRU eviction. */
+        var lastUse = System.currentTimeMillis()
     }
 
     /** All live tiles; key -> tile. Held by the ViewModel. */
@@ -50,7 +52,10 @@ object RasterTiles {
         tiles.getOrPut(key) {
             val bmp = Bitmap.createBitmap(TILE, TILE, Bitmap.Config.ARGB_8888)
             Tile(key, bmp, Canvas(bmp))
-        }
+        }.also { it.lastUse = System.currentTimeMillis() }
+
+    /** Touch a tile on draw so LRU eviction keeps recently-seen tiles. */
+    fun touch(t: Tile) { t.lastUse = System.currentTimeMillis() }
 
     /** Tiles of a given level+layer that intersect the given level-local rect. */
     fun tilesInRect(levelId: Int, layerId: Long, x0: Float, y0: Float, x1: Float, y1: Float): List<Tile> {
@@ -72,6 +77,52 @@ object RasterTiles {
     }
 
     fun clearAll() = tiles.clear()
+
+    /**
+     * Phase 2 polish: keep the in-memory tile cache bounded. Tiles are 256 KB
+     * each (256x256 ARGB_8888); cap at 64 tiles (~16 MB). Only NON-DIRTY tiles
+     * (already flushed to PNG by a save) may be evicted — they are reloaded
+     * from disk on demand via loadTile(). Returns number of tiles evicted.
+     */
+    const val MAX_TILES = 64
+    /** Keys of tiles evicted from memory (still on disk as PNGs). */
+    private val evictedKeys = HashSet<TileKey>()
+    fun evict(): Int {
+        if (tiles.size <= MAX_TILES) return 0
+        val sorted = tiles.values.sortedBy { it.lastUse }
+        var evicted = 0
+        for (t in sorted) {
+            if (tiles.size <= MAX_TILES) break
+            if (t.dirty) continue   // never evict unsaved paint
+            t.bitmap.recycle()
+            tiles.remove(t.key)
+            evictedKeys.add(t.key)
+            evicted++
+        }
+        return evicted
+    }
+
+    /**
+     * Reload a single tile from its project PNG (called by the renderer when a
+     * tile was evicted but is visible again). Returns null if no saved PNG exists.
+     */
+    fun loadTile(ctx: android.content.Context, projectName: String, key: TileKey): Tile? {
+        val dir = java.io.File(
+            com.example.infinitedraw.storage.ProjectStorage.projectDir(ctx, projectName), "tiles")
+        val f = java.io.File(dir, "${key.levelId}_${key.layerId}_${key.tx}_${key.ty}.png")
+        if (!f.exists()) return null
+        val bmp = android.graphics.BitmapFactory.decodeFile(f.absolutePath) ?: return null
+        if (bmp.width != TILE || bmp.height != TILE) { bmp.recycle(); return null }
+        val t = tileFor(key)
+        t.canvas.setBitmap(bmp)
+        t.bitmap = bmp
+        t.dirty = false
+        evictedKeys.remove(key)
+        return t
+    }
+
+    /** True if this tile was evicted (may exist on disk as a PNG). */
+    fun isEvicted(key: TileKey) = key in evictedKeys
 
     // ---- undo/redo snapshots (Phase 2b) --------------------------------------
 

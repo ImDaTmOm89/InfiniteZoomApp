@@ -128,6 +128,8 @@ object ProjectStorage {
             tmp.renameTo(dst)
             saveTiles(ctx, p)
             setLastProjectName(ctx, p.name)
+            // Phase 2 polish: keep the tile cache bounded after each flush.
+            com.example.infinitedraw.render.RasterTiles.evict()
         } catch (t: Throwable) {
             Log.e(TAG, "save failed", t)
         }
