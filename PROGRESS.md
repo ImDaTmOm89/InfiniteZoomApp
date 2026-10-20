@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-Last updated: 2026-10-20 (Phase 2 thread-safety fix committed)
+Last updated: 2026-10-20 (bug-fix pass committed)
 
 ## Known issues
 
@@ -11,6 +11,17 @@ Last updated: 2026-10-20 (Phase 2 thread-safety fix committed)
   rotation) still need a manual run on the tablet.
 
 ## Finished steps
+- Bug-fix pass — 2026-10-20 (commit `1083b4c`). Four bugs fixed:
+  (1) Drawing was allowed on hidden/locked layers — `beginStroke` now checks
+  `activeLayer()` visible && unlocked and returns early (plan Step 10 rule).
+  (2) Paper GRID drew each vertical line once per row (O(cols x rows) drawLine
+  calls); now one pass for verticals, one for horizontals, DOTS unchanged.
+  (3) Hardware stylus eraser never activated the raster eraser —
+  `DrawingView.startDraw` now sets `rasterEraserMode` when a raster tool is
+  active, else `eraserMode`; both setters remember `preEraserTool` and restore
+  it when the eraser tip lifts (previously they always snapped back to PEN).
+  (4) `vm.tool` was a plain var so the toolbar's active-tool bullet never
+  recomposed — now `by mutableStateOf`.
 - Phase 2 fix — tile-cache thread safety — 2026-10-20 (commit `b156f28`).
   RasterTiles now guards `tiles`/`evictedKeys` with a lock: tileFor, clearAll,
   evict synchronized; new tilesSnapshot() gives render/save loops a stable
@@ -97,7 +108,15 @@ Last updated: 2026-10-20 (Phase 2 thread-safety fix committed)
 
 ## Next steps / Context (resume cold)
 
-- Plan exhausted. Commits so far (latest first): b156f28 (thread-safety),
+- Bug-fix commit `1083b4c`: files `ui/DrawingViewModel.kt` (visible/locked
+  guard in beginStroke; `preEraserTool` + reworked eraser setters; tool is
+  now `by androidx.compose.runtime.mutableStateOf` — getValue/setValue
+  imports added), `input/DrawingView.kt` (startDraw picks raster vs vector
+  eraser; imports `com.example.infinitedraw.ui.isRaster`),
+  `render/CanvasRenderer.kt` (grid loop restructured).
+- Note: DrawingView calls vm.beginStroke but has no way to show the plan's
+  "Toast when drawing is ignored" — the guard silently no-ops instead. If the
+  user reports "can't draw", first check active layer visibility/lock.
   c281e32 (polish progress), 721a48b (LRU cap), 1d46099 (2b progress),
   ea964c1 (2b undo), 24e559e (2a progress), 4056d6d (2a), f215b46/e2defeb
   (Step 18), 71adc27/c371ac0 (Step 7-16 bundle).
