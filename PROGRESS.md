@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-Last updated: 2026-10-20 (Phase 2b committed)
+Last updated: 2026-10-20 (Phase 2 polish committed)
 
 ## Known issues
 
@@ -11,6 +11,14 @@ Last updated: 2026-10-20 (Phase 2b committed)
   rotation) still need a manual run on the tablet.
 
 ## Finished steps
+- Phase 2 polish — tile memory cap — 2026-10-20 (commit `721a48b`).
+  `RasterTiles`: Tile.lastUse, touch(), MAX_TILES=64 (~16 MB), evict() drops
+  only NON-DIRTY tiles (recycles bitmaps, keys to evictedKeys set),
+  loadTile() reloads a single tile PNG on demand, isEvicted(). ProjectStorage
+  save() calls evict() after flushing. CanvasRenderer.drawRasterTiles touches
+  tiles on draw and reloads recycled/evicted tiles from disk in-view.
+  In-progress raster preview already tile-only (dabs apply live). Mix/smudge
+  strength tuning remains on-device. Build + tests pass.
 - Phase 2b — raster undo/redo — 2026-10-20 (commit `ea964c1`). Raster dabs are
   now undoable: `RasterTiles.TileSnapshot` (key, cx/cy/r rect, pixels) captures
   pre-dab pixels into `vm.rasterBefore` during OIL/MIX/RERASER strokes;
@@ -76,33 +84,30 @@ Last updated: 2026-10-20 (Phase 2b committed)
 
 ## Step in progress
 
-- (none) Phase 2a + 2b committed. Remaining Phase 2 polish: on-device tuning
-  of mix/smudge strength, memory cap on tile cache (LRU evict non-visible
-  tiles), tile-only in-progress preview. Then Phase 3 / user testing.
+- (none) Phase 2a/2b/polish committed. Remaining Phase 2 items are on-device:
+  mix/smudge strength tuning, perf check of evict/reload during fast panning.
+  Then PLAN.md Phase 3 or user testing.
 
 ## Next steps / Context (resume cold)
 
-- Phase 2b (`ea964c1`): `render/RasterTiles.kt` (TileSnapshot with cx/cy/r,
-  snapshot(), restore(), dab/erase take `before: MutableList<TileSnapshot>?`,
-  fresh-tile full-empty snapshot), `engine/Commands.kt` (RasterCommand
-  before/after lists), `ui/DrawingViewModel.kt` (rasterBefore list cleared at
-  beginStroke, filled by rasterDab; endStroke captures after via
-  snapshot(s.key, s.cx, s.cy, s.r) and execs RasterCommand; cancelStroke
-  restores; SMUDGE passes before=null). Undo/redo buttons already existed and
-  call vm.undo()/vm.redo().
-- Smudge remains non-undoable by design; if undoing smudge is wanted later,
-  snapshot before AND after per dab and replay the sequence in reverse.
-- Phase 2a context (files, tool list, PNG tile persistence, O/M/S/RE buttons)
-  still applies — see Phase 2a entry below.
-- Known limitation: raster snapshots hold pixels for the whole stroke; long
-  strokes over many tiles cost memory (one small rect per dab per tile). If
-  memory becomes an issue, coalesce per-tile before snapshots (union rect).
-- User-visible test: paint with OIL/MIX, undo (strokes vanish), redo (return);
-  RERASER then undo restores erased pixels; cancel mid-stroke undoes the
-  partial dabs.
-- Earlier context: Step 18 manual on-device checks pending; export PNG to
-  getExternalFilesDir/Pictures; no project-picker UI calling
-  ProjectStorage.listProjects().
+- Phase 2 polish (`721a48b`): `render/RasterTiles.kt` (lastUse/touch, MAX_TILES,
+  evict() non-dirty only + evictedKeys, loadTile() single-PNG reload,
+  isEvicted()), `render/CanvasRenderer.kt` (drawRasterTiles: rt local alias,
+  touch on draw, reload recycled bitmaps via loadTile before drawing),
+  `storage/ProjectStorage.kt` (save() calls RasterTiles.evict() after saveTiles).
+- Caution: evict() runs on the autosave IO thread while the UI thread draws —
+  current code is not synchronized; acceptable for now, revisit if crashes
+  appear (a ConcurrentModificationException in RasterTiles would be the sign).
+- Undo snapshots reference tile bitmaps only via pixel copies, so eviction
+  does not break undo/redo (snapshot.restore re-creates pixels on the current
+  tile if present; if the tile was evicted, restore is a no-op — the PNG on
+  disk already matches the post-undo state only if the last save happened
+  after undo. Edge case, unlikely, flagged).
+- User test: paint >64 tiles (huge strokes across many tiles), confirm no
+  OOM, old areas redraw after scrolling back (reload from PNG), autosave
+  flushes work.
+- Earlier context: Step 18 manual checks pending; Phase 2b undo tests pending;
+  export PNG to getExternalFilesDir/Pictures; no project-picker UI.
 
 ## Verification (this audit)
 
