@@ -140,7 +140,7 @@ object ProjectStorage {
         val tiles = com.example.infinitedraw.render.RasterTiles
         if (tiles.tiles.isEmpty()) return
         val dir = File(projectDir(ctx, p.name), "tiles").apply { mkdirs() }
-        for (t in tiles.tiles.values) {
+        for (t in tiles.tilesSnapshot()) {
             if (!t.dirty) continue
             val k = t.key
             val f = File(dir, "${k.levelId}_${k.layerId}_${k.tx}_${k.ty}.png")

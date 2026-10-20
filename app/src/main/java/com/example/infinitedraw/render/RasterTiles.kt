@@ -45,17 +45,24 @@ object RasterTiles {
         var lastUse = System.currentTimeMillis()
     }
 
-    /** All live tiles; key -> tile. Held by the ViewModel. */
+    /** All live tiles; key -> tile. Held by the ViewModel. Guarded by `lock`
+     *  (mutations happen on the autosave IO thread via evict(), draws on the UI thread). */
     val tiles = HashMap<TileKey, Tile>()
+    private val lock = Any()
 
     fun tileFor(key: TileKey): Tile =
-        tiles.getOrPut(key) {
-            val bmp = Bitmap.createBitmap(TILE, TILE, Bitmap.Config.ARGB_8888)
-            Tile(key, bmp, Canvas(bmp))
-        }.also { it.lastUse = System.currentTimeMillis() }
+        synchronized(lock) {
+            tiles.getOrPut(key) {
+                val bmp = Bitmap.createBitmap(TILE, TILE, Bitmap.Config.ARGB_8888)
+                Tile(key, bmp, Canvas(bmp))
+            }.also { it.lastUse = System.currentTimeMillis() }
+        }
 
     /** Touch a tile on draw so LRU eviction keeps recently-seen tiles. */
     fun touch(t: Tile) { t.lastUse = System.currentTimeMillis() }
+
+    /** Thread-safe snapshot of all live tiles, for the render loop. */
+    fun tilesSnapshot(): Collection<Tile> = synchronized(lock) { tiles.values.toList() }
 
     /** Tiles of a given level+layer that intersect the given level-local rect. */
     fun tilesInRect(levelId: Int, layerId: Long, x0: Float, y0: Float, x1: Float, y1: Float): List<Tile> {
@@ -76,7 +83,10 @@ object RasterTiles {
         tiles.entries.removeAll { it.key.levelId == levelId }
     }
 
-    fun clearAll() = tiles.clear()
+    fun clearAll() = synchronized(lock) {
+        tiles.clear()
+        evictedKeys.clear()
+    }
 
     /**
      * Phase 2 polish: keep the in-memory tile cache bounded. Tiles are 256 KB
@@ -88,18 +98,20 @@ object RasterTiles {
     /** Keys of tiles evicted from memory (still on disk as PNGs). */
     private val evictedKeys = HashSet<TileKey>()
     fun evict(): Int {
-        if (tiles.size <= MAX_TILES) return 0
-        val sorted = tiles.values.sortedBy { it.lastUse }
-        var evicted = 0
-        for (t in sorted) {
-            if (tiles.size <= MAX_TILES) break
-            if (t.dirty) continue   // never evict unsaved paint
-            t.bitmap.recycle()
-            tiles.remove(t.key)
-            evictedKeys.add(t.key)
-            evicted++
+        synchronized(lock) {
+            if (tiles.size <= MAX_TILES) return 0
+            val sorted = tiles.values.sortedBy { it.lastUse }
+            var evicted = 0
+            for (t in sorted) {
+                if (tiles.size <= MAX_TILES) break
+                if (t.dirty) continue   // never evict unsaved paint
+                t.bitmap.recycle()
+                tiles.remove(t.key)
+                evictedKeys.add(t.key)
+                evicted++
+            }
+            return evicted
         }
-        return evicted
     }
 
     /**

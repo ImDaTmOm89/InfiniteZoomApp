@@ -122,7 +122,7 @@ class CanvasRenderer {
     private fun drawRasterTiles(canvas: Canvas, vm: DrawingViewModel, level: ZoomLevel, camX: Double, camY: Double,
                                 zoom: Double, w: Int, h: Int, layerId: Long, layerAlpha: Int) {
         val rt = com.example.infinitedraw.render.RasterTiles
-        for (t in rt.tiles.values) {
+        for (t in rt.tilesSnapshot()) {
             if (t.key.levelId != level.id || t.key.layerId != layerId) continue
             // tile rect in level-local coords
             val x0 = t.key.tx * rt.TILE.toDouble()
