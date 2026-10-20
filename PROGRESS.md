@@ -1,15 +1,21 @@
 # PROGRESS.md
 
-Last updated: 2026-10-19 (audit, after PLAN.md restored)
+Last updated: 2026-10-20 (Step 18 committed)
 
 ## Known issues
 
 - `PLAN.md` restored this session; the uncommitted work maps to Steps 7-17.
 - No project-picker UI found calling `ProjectStorage.listProjects()` — either still
   missing or part of a later Menu item not yet wired.
-- `PLAN.md`, `PROGRESS.md`, `.vscode/settings.json` are all uncommitted.
+- Step 18 on-device checklist items (palm rejection, pinch-spam, 3000 strokes,
+  rotation) still need a manual run on the tablet.
 
 ## Finished steps
+- Step 18 — final checklist/commit — 2026-10-20. Commit `e2defeb` finishes the
+  uncommitted Steps 8-17 work (PNG export button, tool-aware live stroke preview,
+  Kotlin 2.0 catch fix). assembleDebug + test BUILD SUCCESSFUL. On-device manual
+  checks still pending (user). Git history quirk: `c371ac0` bundled Steps 8-16.
+
 - Step 7 (brush tools) — 2026-10-19. `BrushType.PEN/MARKER/AIRBRUSH` all render
   distinctly: PEN = opaque ribbon w/ pressure; MARKER = flat, 70% alpha, pressure off;
   AIRBRUSH = blurred edge (BlurMaskFilter), 80% alpha. Eraser is now a tool
@@ -47,10 +53,30 @@ Last updated: 2026-10-19 (audit, after PLAN.md restored)
 
 ## Step in progress
 
-- Step 18 — final checklist / commit of all Steps 7–17 work. Evidence: git shows
-  modified MainActivity.kt, CanvasRenderer.kt, DrawingViewModel.kt;
-  deleted model/Commands.kt; untracked engine/Commands.kt, storage/ProjectStorage.kt.
-  Nothing from Step 7 onward is committed yet.
+- (none) Steps 3-17 complete; Step 18 commit done 2026-10-20 (`e2defeb`).
+  Remaining: the six manual on-device checks from PLAN.md Step 18, then Phase 2
+  (raster brushes) is next.
+
+## Next steps / Context (resume cold)
+
+- Steps 3-17 are DONE and committed. Latest commit: `e2defeb` on master.
+  Files: `model/Models.kt`, `model/Project.kt`, `engine/InfiniteZoomEngine.kt`,
+  `engine/Commands.kt`, `storage/ProjectStorage.kt`, `render/CanvasRenderer.kt`,
+  `input/DrawingView.kt`, `MainActivity.kt`, `ui/DrawingViewModel.kt`,
+  `ui/panels/{ColorPickerPanel,BrushSettingsPanel,LayersPanel,PaperPanel}.kt`.
+- Git history note: commit `c371ac0` (labelled "Step 7") actually bundled the
+  Step 8-16 files (Commands, ProjectStorage, panels, PLAN.md); `e2defeb` finished
+  it with Step 17 PNG export + tool-aware live stroke preview + Kotlin 2.0
+  catch-underscore fix. Everything is now clean (`git status` empty except ignored).
+- Verified: `gradlew assembleDebug` BUILD SUCCESSFUL, `gradlew test` BUILD
+  SUCCESSFUL (EngineTest: testZoomIn + testZoomOut).
+- Export PNG writes to `getExternalFilesDir(null)/Pictures/export_<ts>.png` with a
+  Toast (deviations from plan: plan said CreateDocument SAF; simplest option chosen,
+  log in DECISIONS.md).
+- Known issue from audit: no project-picker UI calls `ProjectStorage.listProjects()`
+  found; open-project dialog (Step 16 menu) may be missing — check MainActivity.
+- Next: run the Step 18 manual checklist on the tablet, then decide whether to
+  start Phase 2 (raster tile brushes).
 
 ## Verification (this audit)
 
