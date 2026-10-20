@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-Last updated: 2026-10-20 (bug-fix pass committed)
+Last updated: 2026-10-20 (toolbar UI rework committed)
 
 ## Known issues
 
@@ -11,6 +11,13 @@ Last updated: 2026-10-20 (bug-fix pass committed)
   rotation) still need a manual run on the tablet.
 
 ## Finished steps
+- UI toolbar rework — 2026-10-20 (commit `0830f56`, user request). Toolbar
+  moved from a top Row to a left Column aligned CenterStart with top padding
+  110.dp so it sits below the debug level/zoom overlay. All buttons are full
+  words now: Undo, Redo, Color, Brush, Layers, Paper (open panel gets ●),
+  Finger: On/Off, Reset View, Oil, Mix, Smudge, Raster Erase (active tool ●),
+  Insert Image, Export PNG. Shared `toolbarButton` composable. Export now
+  also toasts on failure. Build passes.
 - Bug-fix pass — 2026-10-20 (commit `1083b4c`). Four bugs fixed:
   (1) Drawing was allowed on hidden/locked layers — `beginStroke` now checks
   `activeLayer()` visible && unlocked and returns early (plan Step 10 rule).
@@ -108,6 +115,12 @@ Last updated: 2026-10-20 (bug-fix pass committed)
 
 ## Next steps / Context (resume cold)
 
+- Toolbar rework `0830f56` touched only `MainActivity.kt`: Column at
+  `Alignment.CenterStart`, `padding(start = 12.dp, top = 110.dp)` — the 110.dp
+  offset must clear the 40px debug text; if the debug overlay is removed later,
+  reduce it. `toolbarButton(label, onClick)` helper defined above MainScreen.
+- If the left strip's size slider (still at CenterStart) overlaps the long
+  button column on narrow screens, move the slider to bottom-start.
 - Bug-fix commit `1083b4c`: files `ui/DrawingViewModel.kt` (visible/locked
   guard in beginStroke; `preEraserTool` + reworked eraser setters; tool is
   now `by androidx.compose.runtime.mutableStateOf` — getValue/setValue
