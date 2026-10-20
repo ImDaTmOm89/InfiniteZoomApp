@@ -17,10 +17,11 @@ class CanvasRenderer {
 
     private class Frame(val level: ZoomLevel, val x: Double, val y: Double, val z: Double, val exclude: ZoomLevel?)
 
-    fun render(canvas: Canvas, vm: DrawingViewModel, w: Int, h: Int) {
+    fun render(canvas: Canvas, vm: DrawingViewModel, w: Int, h: Int, debug: Boolean = true) {
         drawPaper(canvas, vm, w, h)
         renderWorld(canvas, vm, w, h)
         val cam = vm.engine.camera
+        if (!debug) return
         // debug text
         paint.style = Paint.Style.FILL
         paint.color = Color.BLACK
@@ -146,8 +147,12 @@ class CanvasRenderer {
         val a = vm.active
         if (a != null) {
             val temp = Stroke(
-                -1L, vm.activeLayerId, com.example.infinitedraw.model.BrushType.PEN,
-                vm.color, vm.brushSizePx / cam.zoom.toFloat(), vm.usePressure, a.toList()
+                -1L, vm.activeLayerId, when (vm.tool) {
+                    com.example.infinitedraw.ui.Tool.MARKER -> BrushType.MARKER
+                    com.example.infinitedraw.ui.Tool.AIRBRUSH -> BrushType.AIRBRUSH
+                    else -> BrushType.PEN
+                },
+                vm.color, vm.brushSizePx / cam.zoom.toFloat(), vm.usePressure && vm.tool == com.example.infinitedraw.ui.Tool.PEN, a.toList()
             )
             drawStroke(canvas, temp, cam.cx, cam.cy, cam.zoom, w, h, paint, path)
         }

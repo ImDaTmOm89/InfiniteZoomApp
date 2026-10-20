@@ -133,6 +133,13 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
                 .clickable {
                     imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 })
+            Text("⬇", Modifier
+                .padding(8.dp)
+                .clickable {
+                    vm.exportPng(viewW, viewH) { path ->
+                        if (path != null) android.widget.Toast.makeText(context, "Saved: $path", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                })
         }
 
         // Left strip: size slider

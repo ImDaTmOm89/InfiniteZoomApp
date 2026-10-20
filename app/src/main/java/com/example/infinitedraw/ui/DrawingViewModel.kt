@@ -1,6 +1,8 @@
 package com.example.infinitedraw.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import com.example.infinitedraw.engine.InfiniteZoomEngine
 import com.example.infinitedraw.engine.AddImage
@@ -148,8 +150,7 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addImage(uri: android.net.Uri, w: Int, h: Int, onDone: () -> Unit = {}) {
         val ctx = getApplication<Application>()
-        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO)
-        scope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val resolver = ctx.contentResolver
                 val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -181,7 +182,8 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
                     commands.exec(AddImage(cam.level.id, img), engine, project)
                     redraw?.invoke()
                 }
-            } catch (_: Exception) {
+            } catch (t: Throwable) {
+                android.util.Log.e("DrawingViewModel", "addImage failed", t)
             }
             onDone()
         }
@@ -223,5 +225,26 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         if (target < 0 || target >= project.layers.size) return
         val layer = project.layers[idx]
         commands.exec(MoveLayer(idx, target), engine, project)
+    }
+
+    /** Step 17: export the current view as a PNG into the app's Pictures directory. */
+    fun exportPng(w: Int, h: Int, onDone: (String?) -> Unit = {}) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            var path: String? = null
+            try {
+                val bmp = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888)
+                val c = android.graphics.Canvas(bmp)
+                com.example.infinitedraw.render.CanvasRenderer().render(c, this@DrawingViewModel, w, h, debug = false)
+                val dir = java.io.File(ctx.getExternalFilesDir(null), "Pictures").apply { mkdirs() }
+                val f = java.io.File(dir, "export_${System.currentTimeMillis()}.png")
+                f.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                bmp.recycle()
+                path = f.absolutePath
+            } catch (t: Throwable) {
+                android.util.Log.e("DrawingViewModel", "exportPng failed", t)
+            }
+            onDone(path)
+        }
     }
 }
