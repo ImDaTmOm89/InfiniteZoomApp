@@ -106,8 +106,8 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
         // Toolbar (left column, starts below the debug level/zoom text)
         Column(
             modifier = Modifier
-                .align(Alignment.CenterStart)
-                .padding(start = 12.dp, top = 110.dp),
+                .align(Alignment.TopStart)
+                .padding(start = 12.dp, top = 96.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             toolbarButton("Undo") { vm.undo() }
