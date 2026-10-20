@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-Last updated: 2026-10-20 (Step 18 committed)
+Last updated: 2026-10-20 (Phase 2a committed)
 
 ## Known issues
 
@@ -11,6 +11,19 @@ Last updated: 2026-10-20 (Step 18 committed)
   rotation) still need a manual run on the tablet.
 
 ## Finished steps
+- Phase 2a — raster tile brushes — 2026-10-20 (commit `4056d6d`). New
+  `render/RasterTiles.kt`: 256x256 ARGB tiles keyed (levelId, layerId, tx, ty),
+  created lazily where painted. Tools OIL/MIX (mixing dabs, coverage-weighted
+  blend, pressure-scaled radius), SMUDGE (picks up average color under brush,
+  drags it), RERASER (clears pixels in circle). Raster dabs stamp in
+  beginStroke/addPoint; raster tools never create vector strokes; autosave
+  schedules after raster strokes. Renderer draws visible tiles per layer with
+  opacity/blend; tiles painted in LEVEL-LOCAL pixels (1 unit = 1 px) so they are
+  sharp near the painted zoom level. Persistence: tiles saved as
+  `projects/<name>/tiles/<level>_<layer>_<tx>_<ty>.png` on every save, loaded on
+  project load (store cleared first). MainActivity toolbar adds O/M/S/RE buttons
+  (active marked ●). Build + tests pass.
+
 - Step 18 — final checklist/commit — 2026-10-20. Commit `e2defeb` finishes the
   uncommitted Steps 8-17 work (PNG export button, tool-aware live stroke preview,
   Kotlin 2.0 catch fix). assembleDebug + test BUILD SUCCESSFUL. On-device manual
@@ -53,30 +66,33 @@ Last updated: 2026-10-20 (Step 18 committed)
 
 ## Step in progress
 
-- (none) Steps 3-17 complete; Step 18 commit done 2026-10-20 (`e2defeb`).
-  Remaining: the six manual on-device checks from PLAN.md Step 18, then Phase 2
-  (raster brushes) is next.
+- (none) Steps 3-17 complete; Step 18 committed; Phase 2a (raster tiles)
+  committed. Next: Phase 2b — undo/redo support for raster dabs, tile-only
+  in-progress preview, tuning smudge strength, then user testing.
 
 ## Next steps / Context (resume cold)
 
-- Steps 3-17 are DONE and committed. Latest commit: `e2defeb` on master.
-  Files: `model/Models.kt`, `model/Project.kt`, `engine/InfiniteZoomEngine.kt`,
-  `engine/Commands.kt`, `storage/ProjectStorage.kt`, `render/CanvasRenderer.kt`,
-  `input/DrawingView.kt`, `MainActivity.kt`, `ui/DrawingViewModel.kt`,
-  `ui/panels/{ColorPickerPanel,BrushSettingsPanel,LayersPanel,PaperPanel}.kt`.
-- Git history note: commit `c371ac0` (labelled "Step 7") actually bundled the
-  Step 8-16 files (Commands, ProjectStorage, panels, PLAN.md); `e2defeb` finished
-  it with Step 17 PNG export + tool-aware live stroke preview + Kotlin 2.0
-  catch-underscore fix. Everything is now clean (`git status` empty except ignored).
+- Phase 2a committed (`4056d6d`). Files: `render/RasterTiles.kt` (new, ~215
+  lines: TileKey/Tile, tiles HashMap, dab/erase, mixDab/smudgeDab),
+  `ui/DrawingViewModel.kt` (Tool enum now PEN/MARKER/AIRBRUSH/ERASER/OIL/MIX/
+  SMUDGE/RERASER + `Tool.isRaster()` extension; rasterDab private fn; raster
+  tools skip vector-stroke creation in endStroke), `render/CanvasRenderer.kt`
+  (drawRasterTiles per level+layer inside drawLevelContent),
+  `storage/ProjectStorage.kt` (saveTiles/loadTiles PNG round-trip,
+  RasterTiles.clearAll on load), `MainActivity.kt` (O/M/S/RE toolbar buttons).
+- Known limitation: raster dabs are NOT undoable (tiles bypass the UndoStack);
+  mixing uses a simple lerp blend with coverage-weighted strength — may need
+  tuning. Smudge on empty tiles is a no-op. Tiles are per-layer, so layer
+  opacity/blend applies.
+- Raster tiles look sharp near the zoom they were painted at (level-local px);
+  zooming far out/in scales them (filterBitmap on).
+- User-visible test: paint with O/M, drag S over wet colors to smudge, RE to
+  erase raster paint only, save/reopen project, check tiles restore.
+- Earlier context (still relevant): Step 18 manual on-device checks pending;
+  export PNG writes to getExternalFilesDir/Pictures (deviation from SAF plan);
+  no project-picker UI calls ProjectStorage.listProjects() found.
 - Verified: `gradlew assembleDebug` BUILD SUCCESSFUL, `gradlew test` BUILD
-  SUCCESSFUL (EngineTest: testZoomIn + testZoomOut).
-- Export PNG writes to `getExternalFilesDir(null)/Pictures/export_<ts>.png` with a
-  Toast (deviations from plan: plan said CreateDocument SAF; simplest option chosen,
-  log in DECISIONS.md).
-- Known issue from audit: no project-picker UI calls `ProjectStorage.listProjects()`
-  found; open-project dialog (Step 16 menu) may be missing — check MainActivity.
-- Next: run the Step 18 manual checklist on the tablet, then decide whether to
-  start Phase 2 (raster tile brushes).
+  SUCCESSFUL.
 
 ## Verification (this audit)
 
