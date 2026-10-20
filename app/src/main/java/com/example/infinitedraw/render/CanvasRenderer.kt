@@ -102,6 +102,7 @@ class CanvasRenderer {
             val layerAlpha = (layer.opacity * 255).toInt().coerceIn(0, 255)
             val save = canvas.save()
             paint.xfermode = blendMode(layer.blend)
+            drawRasterTiles(canvas, vm, level, camX, camY, zoom, w, h, layer.id, layerAlpha)
             for (img in level.images) {
                 if (img.layerId != layer.id) continue
                 drawImage(canvas, vm, img, camX, camY, zoom, w, h, layerAlpha)
@@ -114,6 +115,29 @@ class CanvasRenderer {
             }
             paint.xfermode = null
             canvas.restoreToCount(save)
+        }
+    }
+
+    /** Phase 2: draw every raster tile of this level+layer that intersects the viewport. */
+    private fun drawRasterTiles(canvas: Canvas, vm: DrawingViewModel, level: ZoomLevel, camX: Double, camY: Double,
+                                zoom: Double, w: Int, h: Int, layerId: Long, layerAlpha: Int) {
+        for (t in com.example.infinitedraw.render.RasterTiles.tiles.values) {
+            if (t.key.levelId != level.id || t.key.layerId != layerId) continue
+            // tile rect in level-local coords
+            val x0 = t.key.tx * com.example.infinitedraw.render.RasterTiles.TILE.toDouble()
+            val y0 = t.key.ty * com.example.infinitedraw.render.RasterTiles.TILE.toDouble()
+            val x1 = x0 + com.example.infinitedraw.render.RasterTiles.TILE
+            val y1 = y0 + com.example.infinitedraw.render.RasterTiles.TILE
+            val sx0 = ((x0 - camX) * zoom + w / 2.0)
+            val sy0 = ((y0 - camY) * zoom + h / 2.0)
+            val sx1 = ((x1 - camX) * zoom + w / 2.0)
+            val sy1 = ((y1 - camY) * zoom + h / 2.0)
+            if (sx1 < 0 || sy1 < 0 || sx0 > w || sy0 > h) continue   // cull
+            val dst = android.graphics.RectF(sx0.toFloat(), sy0.toFloat(), sx1.toFloat(), sy1.toFloat())
+            paint.alpha = layerAlpha
+            paint.style = Paint.Style.FILL
+            paint.isFilterBitmap = true
+            canvas.drawBitmap(t.bitmap, null, dst, paint)
         }
     }
 

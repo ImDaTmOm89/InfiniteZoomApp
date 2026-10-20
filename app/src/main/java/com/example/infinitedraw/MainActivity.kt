@@ -128,6 +128,15 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
                     vm.engine.camera.zoom = 1.0; vm.engine.camera.cx = 0.0; vm.engine.camera.cy = 0.0
                     vm.redraw?.invoke()
                 })
+            // Phase 2 raster tools; the active tool is marked with a bullet
+            listOf("O" to com.example.infinitedraw.ui.Tool.OIL,
+                   "M" to com.example.infinitedraw.ui.Tool.MIX,
+                   "S" to com.example.infinitedraw.ui.Tool.SMUDGE,
+                   "RE" to com.example.infinitedraw.ui.Tool.RERASER).forEach { (label, t) ->
+                Text(if (vm.tool == t) "$label●" else label, Modifier
+                    .padding(8.dp)
+                    .clickable { vm.tool = t })
+            }
             Text("Img", Modifier
                 .padding(8.dp)
                 .clickable {

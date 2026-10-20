@@ -21,7 +21,10 @@ import com.example.infinitedraw.model.ZoomLevel
 import com.example.infinitedraw.storage.Autosave
 import kotlin.math.hypot
 
-enum class Tool { PEN, MARKER, AIRBRUSH, ERASER }
+enum class Tool { PEN, MARKER, AIRBRUSH, ERASER, OIL, MIX, SMUDGE, RERASER }
+
+/** Raster (Phase 2) tools paint into 256x256 tiles instead of creating vector strokes. */
+fun Tool.isRaster(): Boolean = this == Tool.OIL || this == Tool.MIX || this == Tool.SMUDGE || this == Tool.RERASER
 
 class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     val engine = InfiniteZoomEngine()
@@ -41,6 +44,9 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     var eraserMode: Boolean
         get() = tool == Tool.ERASER
         set(v) { tool = if (v) Tool.ERASER else Tool.PEN }   // hardware eraser toggle
+    var rasterEraserMode: Boolean
+        get() = tool == Tool.RERASER
+        set(v) { tool = if (v) Tool.RERASER else Tool.PEN }  // hardware eraser in raster tools
     var tool = Tool.PEN             // active tool; ERASER clears strokes
     val pendingRemoved = mutableListOf<Stroke>()   // strokes marked by the eraser, hidden until commit
 
@@ -54,7 +60,11 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         activeLevel = engine.camera.level
         active = ArrayList<StrokePoint>().also { it.add(StrokePoint(l[0].toFloat(), l[1].toFloat(), p)) }
         pendingRemoved.clear()
-        if (tool == Tool.ERASER) eraseAt(l[0].toFloat(), l[1].toFloat())
+        if (tool.isRaster()) {
+            rasterDab(l[0].toFloat(), l[1].toFloat(), p)
+        } else if (tool == Tool.ERASER) {
+            eraseAt(l[0].toFloat(), l[1].toFloat())
+        }
         redraw?.invoke()
     }
 
@@ -66,7 +76,11 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         val minDist = 1.5 / engine.camera.zoom
         if (dx * dx + dy * dy < minDist * minDist) return
         a.add(StrokePoint(l[0].toFloat(), l[1].toFloat(), p))
-        if (tool == Tool.ERASER) eraseAt(l[0].toFloat(), l[1].toFloat())
+        if (tool.isRaster()) {
+            rasterDab(l[0].toFloat(), l[1].toFloat(), p)
+        } else if (tool == Tool.ERASER) {
+            eraseAt(l[0].toFloat(), l[1].toFloat())
+        }
         redraw?.invoke()
     }
 
@@ -106,8 +120,8 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         val a = active; val lvl = activeLevel
         active = null
         if (a != null && lvl != null && a.isNotEmpty()) {
-            // Eraser never creates a stroke; it only removes.
-            if (tool != Tool.ERASER) {
+            // Eraser and raster tools never create vector strokes.
+            if (tool != Tool.ERASER && !tool.isRaster()) {
                 val type = when (tool) {
                     Tool.MARKER -> BrushType.MARKER
                     Tool.AIRBRUSH -> BrushType.AIRBRUSH
@@ -134,10 +148,30 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
             pendingRemoved.clear()
             autosave.schedule()
         }
+        if (tool.isRaster()) autosave.schedule()   // flush raster tiles to PNGs
         redraw?.invoke()
     }
 
-    fun cancelStroke() { active = null; pendingRemoved.clear(); redraw?.invoke() }
+    fun cancelStroke() { active = null; pendingRemoved.clear(); redraw?.invoke()
+    }
+
+    /**
+     * Stamp a raster dab at level-local (lx, ly). Radius: brushSizePx converts
+     * screen px to level-local units via /zoom; pressure modulates it for OIL/MIX.
+     * Tile pixels are in level-local units (1 unit = 1 px).
+     */
+    private fun rasterDab(lx: Float, ly: Float, pressure: Float) {
+        val lvl = activeLevel ?: return
+        val zoom = engine.camera.zoom.toFloat()
+        val r = (brushSizePx / zoom / 2f) * if (tool == Tool.OIL || tool == Tool.MIX) 0.15f + 0.85f * pressure else 1f
+        when (tool) {
+            Tool.OIL -> com.example.infinitedraw.render.RasterTiles.dab(lvl, activeLayerId, lx, ly, r, color, 0)
+            Tool.MIX -> com.example.infinitedraw.render.RasterTiles.dab(lvl, activeLayerId, lx, ly, r, color, 0)
+            Tool.SMUDGE -> com.example.infinitedraw.render.RasterTiles.dab(lvl, activeLayerId, lx, ly, r, color, 1)
+            Tool.RERASER -> com.example.infinitedraw.render.RasterTiles.erase(lvl.id, activeLayerId, lx, ly, r)
+            else -> {}
+        }
+    }
 
     fun undo() { commands.undo(engine, project); redraw?.invoke(); autosave.schedule() }
     fun redo() { commands.redo(engine, project); redraw?.invoke(); autosave.schedule() }

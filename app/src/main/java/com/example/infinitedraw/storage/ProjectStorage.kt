@@ -126,9 +126,52 @@ object ProjectStorage {
             tmp.writeText(serialize(p, e))
             if (dst.exists()) dst.delete()
             tmp.renameTo(dst)
+            saveTiles(ctx, p)
             setLastProjectName(ctx, p.name)
         } catch (t: Throwable) {
             Log.e(TAG, "save failed", t)
+        }
+    }
+
+    /** Phase 2: write every dirty raster tile as PNG under projects/<name>/tiles/. */
+    private fun saveTiles(ctx: Context, p: Project) {
+        val tiles = com.example.infinitedraw.render.RasterTiles
+        if (tiles.tiles.isEmpty()) return
+        val dir = File(projectDir(ctx, p.name), "tiles").apply { mkdirs() }
+        for (t in tiles.tiles.values) {
+            if (!t.dirty) continue
+            val k = t.key
+            val f = File(dir, "${k.levelId}_${k.layerId}_${k.tx}_${k.ty}.png")
+            try {
+                val tmp = File(dir, f.name + ".tmp")
+                tmp.outputStream().use { t.bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                if (f.exists()) f.delete()
+                tmp.renameTo(f)
+                t.dirty = false
+            } catch (t2: Throwable) {
+                Log.e(TAG, "tile save failed: ${f.name}", t2)
+            }
+        }
+    }
+
+    /** Phase 2: load raster tile PNGs for a project into the tile store. */
+    private fun loadTiles(ctx: Context, name: String) {
+        val tiles = com.example.infinitedraw.render.RasterTiles
+        val dir = File(projectDir(ctx, name), "tiles")
+        val files = dir.listFiles { f -> f.name.endsWith(".png") } ?: return
+        for (f in files) {
+            val parts = f.nameWithoutExtension.split("_")
+            if (parts.size != 4) continue
+            val levelId = parts[0].toIntOrNull() ?: continue
+            val layerId = parts[1].toLongOrNull() ?: continue
+            val tx = parts[2].toIntOrNull() ?: continue
+            val ty = parts[3].toIntOrNull() ?: continue
+            val bmp = android.graphics.BitmapFactory.decodeFile(f.absolutePath)
+            if (bmp == null || bmp.width != tiles.TILE || bmp.height != tiles.TILE) continue
+            val t = tiles.tileFor(com.example.infinitedraw.render.RasterTiles.TileKey(levelId, layerId, tx, ty))
+            t.canvas.setBitmap(bmp)
+            t.bitmap = bmp
+            t.dirty = false
         }
     }
 
@@ -137,6 +180,8 @@ object ProjectStorage {
             val f = File(projectDir(ctx, name), "project.json")
             if (!f.exists()) return false
             deserialize(f.readText(), p, e)
+            com.example.infinitedraw.render.RasterTiles.clearAll()
+            loadTiles(ctx, name)
             setLastProjectName(ctx, p.name)
             true
         } catch (t: Throwable) {
