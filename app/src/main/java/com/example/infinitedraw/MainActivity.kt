@@ -77,11 +77,17 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
     var size by remember { mutableStateOf(vm.brushSizePx) }
     var viewW by remember { mutableStateOf(1080) }
     var viewH by remember { mutableStateOf(1920) }
+    val context = LocalContext.current
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) vm.addImage(uri, viewW, viewH)
+        if (uri != null) {
+            vm.addImage(uri, viewW, viewH) { error ->
+                android.widget.Toast.makeText(context,
+                    error ?: "Image imported",
+                    android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
-    val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(Unit) {
         val last = ProjectStorage.lastProjectName(context)

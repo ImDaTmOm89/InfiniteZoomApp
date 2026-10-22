@@ -2,11 +2,13 @@ package com.example.infinitedraw.input
 import android.content.Context
 import android.graphics.Canvas
 import android.view.MotionEvent
+import android.view.VelocityTracker
 import android.view.View
 import com.example.infinitedraw.ui.isRaster
 import com.example.infinitedraw.render.CanvasRenderer
 import com.example.infinitedraw.ui.DrawingViewModel
 import kotlin.math.hypot
+import kotlin.math.pow
 
 class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
     private val renderer = CanvasRenderer()
@@ -15,6 +17,13 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
     private var stylusDown = false
     private var lastCount = -1
     private var lastMx = 0f; private var lastMy = 0f; private var lastDist = 0f
+    private var lastWasOneFingerPan = false   // true only when the last navigate was a 1-finger pan
+
+    // ---- Step 19: swipe momentum (fling) ----
+    private var tracker: VelocityTracker? = null
+    private var flingRunnable: Runnable? = null
+    private var flingVx = 0f; private var flingVy = 0f
+    private var flingLastNs = 0L
 
     init { vm.redraw = { postInvalidate() } }
     override fun onDraw(canvas: Canvas) { renderer.render(canvas, vm, width, height) }
@@ -36,11 +45,19 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
         }
         vm.beginStroke(e.getX(i), e.getY(i), e.getPressure(i), width, height)
     }
-    private fun startNavigate(e: MotionEvent) { mode = Mode.NAVIGATE; lastCount = -1; navigate(e) }
+    private fun startNavigate(e: MotionEvent) {
+        stopFling()                               // any touch down cancels the fling at once
+        mode = Mode.NAVIGATE; lastCount = -1
+        tracker?.recycle()
+        tracker = VelocityTracker.obtain()
+        tracker?.addMovement(e)
+        navigate(e)
+    }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                stopFling()
                 if (isStylus(e, 0)) { stylusDown = true; startDraw(e, 0) }
                 else if (vm.fingerDraws) startDraw(e, 0)
                 else startNavigate(e)
@@ -61,7 +78,7 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
                         vm.addPoint(e.getX(i), e.getY(i), e.getPressure(i), width, height)
                     }
                 }
-                Mode.NAVIGATE -> if (!stylusDown) navigate(e)
+                Mode.NAVIGATE -> if (!stylusDown) { tracker?.addMovement(e); navigate(e) }
                 Mode.NONE -> {}
             }
             MotionEvent.ACTION_POINTER_UP -> {
@@ -70,8 +87,20 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
                     vm.endStroke(); stylusDown = false; mode = Mode.NONE
                 }
             }
-            MotionEvent.ACTION_UP -> { if (mode == Mode.DRAW) vm.endStroke(); stylusDown = false; mode = Mode.NONE }
-            MotionEvent.ACTION_CANCEL -> { if (mode == Mode.DRAW) vm.cancelStroke(); stylusDown = false; mode = Mode.NONE }
+            MotionEvent.ACTION_UP -> {
+                if (mode == Mode.DRAW) vm.endStroke()
+                else if (mode == Mode.NAVIGATE && lastWasOneFingerPan) startFling()
+                cleanupTracker()
+                stylusDown = false; mode = Mode.NONE
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                // Some tablets send ACTION_CANCEL (palm-rejection stream flush) when the
+                // stylus lifts instead of ACTION_UP. If a stroke is in progress, commit it
+                // rather than discarding it — otherwise drawings vanish on lift.
+                if (mode == Mode.DRAW) vm.endStroke()
+                cleanupTracker()
+                stylusDown = false; mode = Mode.NONE
+            }
         }
         invalidate()
         return true
@@ -88,6 +117,43 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
             if (n >= 2 && lastDist > 0f)
                 vm.engine.zoomAt((dist / lastDist).toDouble().coerceIn(0.5, 2.0), mx, my, width, height)
         }
+        lastWasOneFingerPan = n == 1 && lastCount == 1   // momentum only after a pure 1-finger pan
         lastCount = n; lastMx = mx; lastMy = my; lastDist = dist
+    }
+
+    // ---- Step 19: fling helpers ----
+
+    /** Momentum only after a pure 1-finger pan above 300 px/s; pinch-zoom never flings. */
+    private fun startFling() {
+        val t = tracker ?: return
+        t.computeCurrentVelocity(1000)
+        val vx = t.xVelocity; val vy = t.yVelocity
+        if (hypot(vx, vy) < 300f) return
+        flingVx = vx; flingVy = vy
+        flingLastNs = System.nanoTime()
+        val runnable = object : Runnable {
+            override fun run() {
+                val now = System.nanoTime()
+                val dt = ((now - flingLastNs) / 1_000_000_000.0).toFloat()
+                flingLastNs = now
+                vm.engine.panBy(flingVx * dt, flingVy * dt)
+                val decay = 0.92.pow(dt * 60.0).toFloat()
+                flingVx *= decay; flingVy *= decay
+                invalidate()
+                if (hypot(flingVx, flingVy) >= 30f) postOnAnimation(this)
+                else stopFling()
+            }
+        }
+        flingRunnable = runnable
+        postOnAnimation(runnable)
+    }
+
+    private fun stopFling() {
+        flingRunnable?.let { removeCallbacks(it) }
+        flingRunnable = null
+    }
+
+    private fun cleanupTracker() {
+        tracker?.recycle(); tracker = null
     }
 }

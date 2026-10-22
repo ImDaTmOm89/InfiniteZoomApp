@@ -222,9 +222,11 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     val bitmaps = HashMap<Long, android.graphics.Bitmap>()
     private var nextImageId = 1L
 
-    fun addImage(uri: android.net.Uri, w: Int, h: Int, onDone: () -> Unit = {}) {
+    /** Imports an image. Reports a user-facing error message on failure, or null on success. */
+    fun addImage(uri: android.net.Uri, w: Int, h: Int, onDone: (String?) -> Unit = {}) {
         val ctx = getApplication<Application>()
         viewModelScope.launch(Dispatchers.IO) {
+            var errorMsg: String? = null
             try {
                 val resolver = ctx.contentResolver
                 val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -233,33 +235,40 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
                 val maxSide = maxOf(bounds.outWidth, bounds.outHeight).coerceAtLeast(1)
                 while (maxSide / sample > 2048) sample *= 2
                 val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                    errorMsg = "Could not read the image. The file may be corrupt or in an unsupported format."
+                    return@launch
+                }
                 val bmp = resolver.openInputStream(uri)?.use {
                     android.graphics.BitmapFactory.decodeStream(it, null, opts)
                 }
-                if (bmp != null) {
-                    val imgId = nextImageId++
-                    val dir = java.io.File(ctx.filesDir, "projects/${project.name}/images").apply { mkdirs() }
-                    java.io.File(dir, "$imgId.png").outputStream().use {
-                        bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
-                    }
-                    bitmaps[imgId] = bmp
-                    val cam = engine.camera
-                    val aspect = if (bmp.height > 0) bmp.width.toDouble() / bmp.height else 1.0
-                    val imgW = w * 0.5 / cam.zoom
-                    val imgH = imgW / aspect
-                    val l = engine.screenToLocal(w / 2f, h / 2f, w, h)
-                    val img = com.example.infinitedraw.model.PlacedImage(
-                        imgId, activeLayerId, "$imgId.png",
-                        (l[0] - imgW / 2).toFloat(), (l[1] - imgH / 2).toFloat(),
-                        imgW.toFloat(), imgH.toFloat()
-                    )
-                    commands.exec(AddImage(cam.level.id, img), engine, project)
-                    redraw?.invoke()
+                if (bmp == null) {
+                    errorMsg = "Could not decode the image. The file may be corrupt or in an unsupported format."
+                    return@launch
                 }
+                val imgId = nextImageId++
+                val dir = java.io.File(ctx.filesDir, "projects/${project.name}/images").apply { mkdirs() }
+                java.io.File(dir, "$imgId.png").outputStream().use {
+                    bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                }
+                    bitmaps[imgId] = bmp
+                val cam = engine.camera
+                val aspect = if (bmp.height > 0) bmp.width.toDouble() / bmp.height else 1.0
+                val imgW = w * 0.5 / cam.zoom
+                val imgH = imgW / aspect
+                val l = engine.screenToLocal(w / 2f, h / 2f, w, h)
+                val img = com.example.infinitedraw.model.PlacedImage(
+                    imgId, activeLayerId, "$imgId.png",
+                    (l[0] - imgW / 2).toFloat(), (l[1] - imgH / 2).toFloat(),
+                    imgW.toFloat(), imgH.toFloat()
+                )
+                commands.exec(AddImage(cam.level.id, img), engine, project)
+                redraw?.invoke()
             } catch (t: Throwable) {
                 android.util.Log.e("DrawingViewModel", "addImage failed", t)
+                errorMsg = "Image import failed: ${t.message ?: t.javaClass.simpleName}"
             }
-            onDone()
+            onDone(errorMsg)
         }
     }
 

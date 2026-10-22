@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-Last updated: 2026-10-20 (toolbar UI rework committed)
+Last updated: 2026-10-22 (Steps 19-24 added as NOT STARTED)
 
 ## Known issues
 
@@ -105,6 +105,59 @@ Last updated: 2026-10-20 (toolbar UI rework committed)
 - Steps 12–15 — panels: ColorPickerPanel, BrushSettingsPanel, LayersPanel, PaperPanel.
 - Step 16 — Persistence: `storage/ProjectStorage.kt` (untracked), autosave debounce,
   restore-last-project, save on ON_PAUSE/dispose.
+
+- Step 19 — swipe momentum — 2026-10-22 — **DONE, awaiting on-device verification**
+  `input/DrawingView.kt`: VelocityTracker fed on every NAVIGATE event (obtained
+  on startNavigate, recycled on UP/CANCEL). On UP after a pure 1-finger pan
+  (`lastWasOneFingerPan`, only true when n==1 for two consecutive navigate
+  calls) with velocity >= 300 px/s, a postOnAnimation fling loop pans by
+  v*dt, decays 0.92^(dt*60), stops below 30 px/s. Any ACTION_DOWN, POINTER
+  DOWN (startNavigate) or fling being active stops it instantly (touch
+  cancels fling). Pinch-zoom (2-finger) never starts a fling; drawing mode
+  unaffected. Build + tests pass.
+
+## NOT STARTED (new plan section added 2026-10-22)
+
+Order is fixed as listed. **Do NOT begin ANY of these until Steps 3-18
+are finished and verified on the tablet.** One step at a time, stop and
+wait for "go" after each. All AGENTS.md / PLAN.md section 0 rules apply
+(one step at a time, locked files, no new dependencies, PowerShell,
+standard report format). Only where a step explicitly overrides a rule
+does that override apply.
+
+- Step 19 - Swipe momentum — DONE 2026-10-22
+  (VelocityTracker in DrawingView NAVIGATE; fling > 300 px/s on UP,
+  postOnAnimation loop, decay 0.92^(dt*60), stop < 30 px/s, touch cancels
+  instantly, no momentum for pinch-zoom or drawing.)
+- Step 20 - Stroke smoothing and pressure curve — NOT STARTED
+  (stabilizer 0-1 default 0.3, pressureGamma 0.5-2 default 1.0 sliders in
+  BrushSettingsPanel, saved in SharedPreferences("settings"); screen-space
+  exponential smoothing in beginStroke/addPoint, raw end-point append on
+  endStroke, p^gamma curve; eraser and select tool exempt.)
+- Step 21 - Select, move and scale — NOT STARTED
+  (Tool.SELECT + left-strip button; Selection state with strokeId or
+  imageId, previewDx/Dy; hitTest via distPointSeg; MOVE vs PICK gestures;
+  MoveStrokes/MoveImage/ScaleSelection commands; dashed outline;
+  SelectionPanel with scale slider 25-400%, Delete, Deselect.)
+- Step 22 - Pencil and charcoal brushes — NOT STARTED (OVERRIDES the
+  BrushType rule for this step only)
+  (adds PENCIL/CHARCOAL to BrushType and Tool; deterministic hash dabs,
+  spacing 0.35*rPx, 3000-dab cap; no image assets; grain stable while
+  pan/zoom.)
+- Step 23 - Project export and import (.uzw) — NOT STARTED
+  (CreateDocument/OpenDocument; zip filesDir/projects/<name>/;
+  display-name-derived folder name with " (2)", " (3)" dedup; zip-slip
+  canonical-path check; 10,000-entry / 500 MB limits; project.json required;
+  Toasts; try/catch, never crash.)
+- Step 24 - Rotation — NOT STARTED — **do last** (touches every coordinate
+  conversion)
+  (Camera.rotation radians; engine screenToLocal/panBy/transformAt per
+  given formulas; shared worldToScreen helper in renderer; circle culling;
+  image + paper rotation with canvas.rotate; two-finger twist in navigate;
+  Reset rotation button; CameraDto persistence; fling works rotated.)
+
+After EACH of these steps: update PROGRESS.md, report in the standard
+format, stop and wait for "go".
 
 ## Step in progress
 
