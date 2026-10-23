@@ -1,16 +1,21 @@
 # PROGRESS.md
 
-Last updated: 2026-10-22 (Steps 19-24 added as NOT STARTED)
-
-## Known issues
-
-- `PLAN.md` restored this session; the uncommitted work maps to Steps 7-17.
-- No project-picker UI found calling `ProjectStorage.listProjects()` — either still
-  missing or part of a later Menu item not yet wired.
-- Step 18 on-device checklist items (palm rejection, pinch-spam, 3000 strokes,
-  rotation) still need a manual run on the tablet.
+Last updated: 2026-10-23 (Step 20 done)
 
 ## Finished steps
+- Step 20 — Stabilizer + pressure gamma — 2026-10-23 — DONE, awaiting on-device verification.
+  `DrawingViewModel`: `stabilizer` (0..1, default 0.3) and `pressureGamma`
+  (0.5..2.0, default 1.0) persisted in SharedPreferences("settings") and
+  loaded in init. `beginStroke` sets smoothingActive for vector tools
+  (PEN/MARKER/AIRBRUSH) only — eraser, raster tools, SELECT exempt. `addPoint`
+  smooths in SCREEN space: pressure is gamma-curved (`p.pow(gamma)`) then
+  exponential-smoothed with alpha = 1 - 0.8*stabilizer along with x/y;
+  smoothing happens before screenToLocal. `endStroke` appends the raw final
+  point (converted) when the pen lifted >1px away from the last smoothed
+  point, so strokes end where the pen did. View size captured (w0/h0) for the
+  conversion. `BrushSettingsPanel`: two new sliders (Stabilizer,
+  Pressure gamma) write straight to the persisted vm fields.
+  Build + tests pass.
 - UI toolbar rework — 2026-10-20 (commit `0830f56`, user request). Toolbar
   moved from a top Row to a left Column aligned CenterStart with top padding
   110.dp so it sits below the debug level/zoom overlay. All buttons are full

@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import kotlin.math.hypot
+import kotlin.math.pow
 
 enum class Tool { PEN, MARKER, AIRBRUSH, ERASER, OIL, MIX, SMUDGE, RERASER }
 
@@ -45,6 +46,32 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     var activeLayerId = 1L
         set(value) { field = value; redraw?.invoke() }
     var usePressure = true
+
+    // ---- Step 20: stroke smoothing + pressure curve (persisted in SharedPreferences("settings")) ----
+    var stabilizer: Float = 0.3f
+        set(value) {
+            field = value.coerceIn(0f, 1f)
+            prefs().edit().putFloat("stabilizer", field).apply()
+        }
+    var pressureGamma: Float = 1.0f
+        set(value) {
+            field = value.coerceIn(0.5f, 2.0f)
+            prefs().edit().putFloat("pressureGamma", field).apply()
+        }
+    private fun prefs() =
+        getApplication<Application>().getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+
+    init {
+        val sp = prefs()
+        stabilizer = sp.getFloat("stabilizer", 0.3f)
+        pressureGamma = sp.getFloat("pressureGamma", 1.0f)
+    }
+
+    // Smoothing state (SCREEN coordinates, reset at stroke start)
+    private var smX = 0f; private var smY = 0f; private var smP = 1f
+    private var lastRawX = 0f; private var lastRawY = 0f; private var lastRawP = 1f
+    private var haveFirstPoint = false
+    private var smoothingActive = false
     private var preEraserTool = Tool.PEN   // tool to restore after hardware eraser lifts
     var eraserMode: Boolean
         get() = tool == Tool.ERASER
@@ -69,6 +96,9 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     var active: ArrayList<StrokePoint>? = null
     var activeLevel: ZoomLevel? = null
 
+    // View dimensions captured at stroke start (for the endStroke raw-point conversion)
+    private var w0 = 0; private var h0 = 0
+
     fun beginStroke(sx: Float, sy: Float, p: Float, w: Int, h: Int) {
         // Plan Step 10: the active layer must be visible and unlocked to draw.
         val layer = activeLayer()
@@ -76,11 +106,20 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
             active = null
             return
         }
+        w0 = w; h0 = h
         val l = engine.screenToLocal(sx, sy, w, h)
         activeLevel = engine.camera.level
         active = ArrayList<StrokePoint>().also { it.add(StrokePoint(l[0].toFloat(), l[1].toFloat(), p)) }
         pendingRemoved.clear()
         rasterBefore.clear()
+        // Step 20: smoothing is applied to PEN/MARKER/AIRBRUSH only (eraser + raster exempt).
+        // SELECT exempted too. First raw point of a stroke is stored as is.
+        smoothingActive = !tool.isRaster() && tool != Tool.ERASER
+        haveFirstPoint = false
+        if (smoothingActive) {
+            lastRawX = sx; lastRawY = sy; lastRawP = p
+            haveFirstPoint = true
+        }
         if (tool.isRaster()) {
             rasterDab(l[0].toFloat(), l[1].toFloat(), p)
         } else if (tool == Tool.ERASER) {
@@ -91,6 +130,16 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addPoint(sx: Float, sy: Float, p: Float, w: Int, h: Int) {
         val a = active ?: return
+        var sx = sx; var sy = sy; var p = p
+        if (smoothingActive && haveFirstPoint) {
+            // Step 20: exponential smoothing in SCREEN space, before the local conversion.
+            // p is gamma-curved first, then smoothed.
+            val curved = p.coerceIn(0f, 1f).pow(pressureGamma)
+            val al = 1f - 0.8f * stabilizer
+            smX += al * (sx - smX); smY += al * (sy - smY); smP += al * (curved - smP)
+            lastRawX = sx; lastRawY = sy; lastRawP = curved
+            sx = smX; sy = smY; p = smP
+        }
         val l = engine.screenToLocal(sx, sy, w, h)
         val last = a.lastOrNull() ?: return
         val dx = l[0] - last.x; val dy = l[1] - last.y
@@ -141,6 +190,14 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         val a = active; val lvl = activeLevel
         active = null
         if (a != null && lvl != null && a.isNotEmpty()) {
+            // Step 20: if the pen lifted away from the last smoothed point, append the
+            // raw final point (converted) so the stroke ends exactly where the pen did.
+            if (smoothingActive && haveFirstPoint) {
+                val l = engine.screenToLocal(lastRawX, lastRawY, w0, h0)
+                if (hypot(lastRawX - smX, lastRawY - smY) > 1f) {
+                    a.add(StrokePoint(l[0].toFloat(), l[1].toFloat(), lastRawP))
+                }
+            }
             // Eraser and raster tools never create vector strokes.
             if (tool != Tool.ERASER && !tool.isRaster()) {
                 val type = when (tool) {

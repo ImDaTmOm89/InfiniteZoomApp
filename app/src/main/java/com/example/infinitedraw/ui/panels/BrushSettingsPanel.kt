@@ -67,6 +67,15 @@ fun BrushSettingsPanel(vm: DrawingViewModel) {
             )
         }
 
+        // Step 20: stabilizer + pressure gamma, persisted via the ViewModel.
+        var stab by remember { mutableStateOf(vm.stabilizer) }
+        Text("Stabilizer %.2f".format(stab))
+        Slider(value = stab, onValueChange = { stab = it; vm.stabilizer = it }, valueRange = 0f..1f)
+
+        var gamma by remember { mutableStateOf(vm.pressureGamma) }
+        Text("Pressure gamma %.2f".format(gamma))
+        Slider(value = gamma, onValueChange = { gamma = it; vm.pressureGamma = it }, valueRange = 0.5f..2f)
+
         Spacer(Modifier.height(4.dp))
         Text("Tools", style = MaterialTheme.typography.titleSmall)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
