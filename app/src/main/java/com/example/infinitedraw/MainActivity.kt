@@ -38,6 +38,7 @@ import com.example.infinitedraw.ui.panels.BrushSettingsPanel
 import com.example.infinitedraw.ui.panels.ColorPickerPanel
 import com.example.infinitedraw.ui.panels.LayersPanel
 import com.example.infinitedraw.ui.panels.PaperPanel
+import com.example.infinitedraw.ui.panels.SelectionPanel
 import com.example.infinitedraw.storage.ProjectStorage
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
@@ -45,7 +46,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 
-enum class PanelType { COLOR, BRUSH, LAYERS, PAPER }
+enum class PanelType { COLOR, BRUSH, LAYERS, PAPER, SELECTION }
 
 @Composable
 fun toolbarButton(label: String, onClick: () -> Unit) {
@@ -94,6 +95,11 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
         if (last != null) ProjectStorage.load(context, last, vm.project, vm.engine)
         vm.redraw?.invoke()
     }
+    // Step 21: the Selection panel follows the selection (opens on pick, closes on deselect).
+    LaunchedEffect(vm.selection) {
+        if (vm.selection != null) panel = PanelType.SELECTION
+        else if (panel == PanelType.SELECTION) panel = null
+    }
     DisposableEffect(lifecycleOwner) {
         val obs = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_PAUSE) vm.saveNow()
@@ -136,6 +142,10 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
             toolbarButton("Reset View") {
                 vm.engine.camera.zoom = 1.0; vm.engine.camera.cx = 0.0; vm.engine.camera.cy = 0.0
                 vm.redraw?.invoke()
+            }
+            // Step 21: Select tool — tap picks, drag inside the dashed box moves.
+            toolbarButton(if (vm.tool == com.example.infinitedraw.ui.Tool.SELECT) "Select ●" else "Select") {
+                vm.tool = com.example.infinitedraw.ui.Tool.SELECT
             }
             // Raster tools; the active one is marked with a bullet
             listOf("Oil" to com.example.infinitedraw.ui.Tool.OIL,
@@ -185,6 +195,7 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
                     PanelType.BRUSH -> BrushSettingsPanel(vm)
                     PanelType.LAYERS -> LayersPanel(vm)
                     PanelType.PAPER -> PaperPanel(vm)
+                    PanelType.SELECTION -> SelectionPanel(vm)
                 }
             }
         }

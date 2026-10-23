@@ -26,7 +26,7 @@ class RemoveImage(val levelId: Int, val image: PlacedImage) : Command {
 
 /** Step 21: move one stroke by (dx,dy) in level-local units. Immutable copy; keeps list index (draw order). */
 class MoveStrokes(val levelId: Int, val strokeId: Long, val dx: Float, val dy: Float) : Command {
-    private lateinit var old: Stroke
+    private var old: Stroke? = null
     override fun apply(e: InfiniteZoomEngine, p: Project) {
         val list = e.levels[levelId]!!.strokes
         val i = list.indexOfFirst { it.id == strokeId }
@@ -38,15 +38,16 @@ class MoveStrokes(val levelId: Int, val strokeId: Long, val dx: Float, val dy: F
         list[i] = moved
     }
     override fun revert(e: InfiniteZoomEngine, p: Project) {
+        val o = old ?: return
         val list = e.levels[levelId]!!.strokes
         val i = list.indexOfFirst { it.id == strokeId }
-        if (i >= 0) list[i] = old
+        if (i >= 0) list[i] = o
     }
 }
 
 /** Step 21: move one image by (dx,dy) in level-local units. Immutable copy; keeps list index. */
 class MoveImage(val levelId: Int, val imageId: Long, val dx: Float, val dy: Float) : Command {
-    private lateinit var old: PlacedImage
+    private var old: PlacedImage? = null
     override fun apply(e: InfiniteZoomEngine, p: Project) {
         val list = e.levels[levelId]!!.images
         val i = list.indexOfFirst { it.id == imageId }
@@ -56,9 +57,10 @@ class MoveImage(val levelId: Int, val imageId: Long, val dx: Float, val dy: Floa
         list[i] = PlacedImage(img.id, img.layerId, img.file, img.x + dx, img.y + dy, img.w, img.h)
     }
     override fun revert(e: InfiniteZoomEngine, p: Project) {
+        val o = old ?: return
         val list = e.levels[levelId]!!.images
         val i = list.indexOfFirst { it.id == imageId }
-        if (i >= 0) list[i] = old
+        if (i >= 0) list[i] = o
     }
 }
 

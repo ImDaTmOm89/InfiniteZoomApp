@@ -14,6 +14,7 @@ import kotlin.math.hypot
 class CanvasRenderer {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
+    private val dashEffect = android.graphics.DashPathEffect(floatArrayOf(14f, 8f), 0f)
 
     private class Frame(val level: ZoomLevel, val x: Double, val y: Double, val z: Double, val exclude: ZoomLevel?)
 
@@ -103,6 +104,9 @@ class CanvasRenderer {
     private fun drawLevelContent(canvas: Canvas, vm: DrawingViewModel, level: ZoomLevel, camX: Double, camY: Double,
                                  zoom: Double, w: Int, h: Int) {
         val z = zoom.toFloat()
+        // Step 21: during a move gesture the selected item is drawn offset by the live preview.
+        val sel = vm.selection
+        val selOff = sel != null && sel.levelId == level.id && (vm.previewDx != 0f || vm.previewDy != 0f)
         for (layer in vm.project.layers) {
             if (!layer.visible) continue
             val layerAlpha = (layer.opacity * 255).toInt().coerceIn(0, 255)
@@ -111,17 +115,49 @@ class CanvasRenderer {
             drawRasterTiles(canvas, vm, level, camX, camY, zoom, w, h, layer.id, layerAlpha)
             for (img in level.images) {
                 if (img.layerId != layer.id) continue
-                drawImage(canvas, vm, img, camX, camY, zoom, w, h, layerAlpha)
+                val iox = if (selOff && sel!!.imageId == img.id) vm.previewDx.toDouble() else 0.0
+                val ioy = if (selOff && sel!!.imageId == img.id) vm.previewDy.toDouble() else 0.0
+                drawImage(canvas, vm, img, camX, camY, zoom, w, h, layerAlpha, iox, ioy)
             }
             for (s in level.strokes) {
                 if (s.layerId != layer.id) continue
                 if (s in vm.pendingRemoved) continue
-                if (cull(s, camX.toFloat(), camY.toFloat(), z, w, h)) continue
-                drawStroke(canvas, s, camX, camY, zoom, w, h, paint, path)
+                val sox = if (selOff && sel!!.strokeId == s.id) vm.previewDx.toDouble() else 0.0
+                val soy = if (selOff && sel!!.strokeId == s.id) vm.previewDy.toDouble() else 0.0
+                if (cull(s, camX.toFloat(), camY.toFloat(), z, w, h, sox, soy)) continue
+                drawStroke(canvas, s, camX, camY, zoom, w, h, paint, path, sox, soy)
             }
             paint.xfermode = null
             canvas.restoreToCount(save)
         }
+        drawSelectionOutline(canvas, vm, level, camX, camY, zoom, w, h)
+    }
+
+    /**
+     * Step 21: dashed rectangle around the selected item's bounds (its own level,
+     * preview offset applied). Only drawn while the SELECT tool is active.
+     */
+    private fun drawSelectionOutline(canvas: Canvas, vm: DrawingViewModel, level: ZoomLevel,
+                                     camX: Double, camY: Double, zoom: Double, w: Int, h: Int) {
+        if (vm.tool != com.example.infinitedraw.ui.Tool.SELECT) return
+        val sel = vm.selection ?: return
+        if (sel.levelId != level.id) return
+        val b = FloatArray(4)
+        if (!vm.selectionBounds(b)) return
+        val ox = vm.previewDx.toDouble(); val oy = vm.previewDy.toDouble()
+        val l = ((b[0] + ox - camX) * zoom + w / 2.0).toFloat()
+        val t = ((b[1] + oy - camY) * zoom + h / 2.0).toFloat()
+        val r = ((b[2] + ox - camX) * zoom + w / 2.0).toFloat()
+        val bo = ((b[3] + oy - camY) * zoom + h / 2.0).toFloat()
+        if (r < 0 || bo < 0 || l > w || t > h) return
+        paint.style = Paint.Style.STROKE
+        paint.maskFilter = null
+        paint.alpha = 255
+        paint.strokeWidth = 2f
+        paint.color = 0xFF2196F3.toInt()
+        paint.pathEffect = dashEffect
+        canvas.drawRect(l, t, r, bo, paint)
+        paint.pathEffect = null
     }
 
     /** Phase 2: draw every raster tile of this level+layer that intersects the viewport. */
@@ -156,12 +192,13 @@ class CanvasRenderer {
     }
 
     private fun drawImage(canvas: Canvas, vm: DrawingViewModel, img: com.example.infinitedraw.model.PlacedImage,
-                          camX: Double, camY: Double, zoom: Double, w: Int, h: Int, layerAlpha: Int) {
+                          camX: Double, camY: Double, zoom: Double, w: Int, h: Int, layerAlpha: Int,
+                          offX: Double = 0.0, offY: Double = 0.0) {
         val bmp = vm.bitmaps[img.id] ?: return
-        val l = ((img.x - camX) * zoom + w / 2f).toFloat()
-        val t = ((img.y - camY) * zoom + h / 2f).toFloat()
-        val r = ((img.x + img.w - camX) * zoom + w / 2f).toFloat()
-        val b = ((img.y + img.h - camY) * zoom + h / 2f).toFloat()
+        val l = ((img.x + offX - camX) * zoom + w / 2f).toFloat()
+        val t = ((img.y + offY - camY) * zoom + h / 2f).toFloat()
+        val r = ((img.x + offX + img.w - camX) * zoom + w / 2f).toFloat()
+        val b = ((img.y + offY + img.h - camY) * zoom + h / 2f).toFloat()
         if (r < 0 || b < 0 || l > w || t > h) return
         val dst = android.graphics.RectF(l, t, r, b)
         paint.alpha = layerAlpha
@@ -196,29 +233,30 @@ class CanvasRenderer {
         }
     }
 
-    private fun cull(s: Stroke, camX: Float, camY: Float, zoom: Float, w: Int, h: Int): Boolean {
+    private fun cull(s: Stroke, camX: Float, camY: Float, zoom: Float, w: Int, h: Int,
+                     offX: Double = 0.0, offY: Double = 0.0): Boolean {
         val b = s.bounds
-        val l = ((b[0] - camX) * zoom + w / 2f)
-        val t = ((b[1] - camY) * zoom + h / 2f)
-        val r = ((b[2] - camX) * zoom + w / 2f)
-        val bo = ((b[3] - camY) * zoom + h / 2f)
+        val l = ((b[0] + offX - camX) * zoom + w / 2f)
+        val t = ((b[1] + offY - camY) * zoom + h / 2f)
+        val r = ((b[2] + offX - camX) * zoom + w / 2f)
+        val bo = ((b[3] + offY - camY) * zoom + h / 2f)
         return r < 0 || bo < 0 || l > w || t > h
     }
 
     fun drawStroke(canvas: Canvas, s: Stroke, camX: Double, camY: Double, zoom: Double,
-                   w: Int, h: Int, paint: Paint, path: Path) {
+                   w: Int, h: Int, paint: Paint, path: Path, offX: Double = 0.0, offY: Double = 0.0) {
         val pts = s.points
         val n = pts.size
         if (n == 0) return
         val b = s.bounds
-        val x0 = (b[0] - camX) * zoom + w / 2.0; val x1 = (b[2] - camX) * zoom + w / 2.0
-        val y0 = (b[1] - camY) * zoom + h / 2.0; val y1 = (b[3] - camY) * zoom + h / 2.0
+        val x0 = (b[0] + offX - camX) * zoom + w / 2.0; val x1 = (b[2] + offX - camX) * zoom + w / 2.0
+        val y0 = (b[1] + offY - camY) * zoom + h / 2.0; val y1 = (b[3] + offY - camY) * zoom + h / 2.0
         if (x1 < 0 || x0 > w || y1 < 0 || y0 > h) return   // cull
 
         val xs = FloatArray(n); val ys = FloatArray(n); val rs = FloatArray(n)
         for (i in 0 until n) {
-            xs[i] = ((pts[i].x - camX) * zoom + w / 2.0).coerceIn(-100000.0, 100000.0).toFloat()
-            ys[i] = ((pts[i].y - camY) * zoom + h / 2.0).coerceIn(-100000.0, 100000.0).toFloat()
+            xs[i] = ((pts[i].x + offX - camX) * zoom + w / 2.0).coerceIn(-100000.0, 100000.0).toFloat()
+            ys[i] = ((pts[i].y + offY - camY) * zoom + h / 2.0).coerceIn(-100000.0, 100000.0).toFloat()
             val pf = if (s.usePressure) 0.15 + 0.85 * pts[i].p else 1.0
             rs[i] = (0.5 * s.width * zoom * pf).toFloat()
         }

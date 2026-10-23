@@ -95,149 +95,19 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     /** Phase 2b: pre-dab pixel snapshots collected while a raster stroke is active. */
     val rasterBefore = mutableListOf<com.example.infinitedraw.render.RasterTiles.TileSnapshot>()
 
-    // ---- Step 21: selection (single item, current zoom level only) ----
-    var selection by mutableStateOf<Selection?>(null)
-    var previewDx = 0f; var previewDy = 0f   // local units, preview offset while dragging
-    private var selectMoving = false          // true after "begin inside selection"
-    private var selectStartX = 0f; private var selectStartY = 0f
-    private var selectCurX = 0f; private var selectCurY = 0f
-    private var selectionSnapshot: Selection? = null // selection at drag start (for preview bounds)
-
-    data class Selection(val levelId: Int, val strokeId: Long?, val imageId: Long?)
-
-    /** Bounds of the selected item in level-local units (of its own level). */
-    fun selectionBounds(s: Selection): FloatArray? {
-        val lvl = engine.levels[s.levelId] ?: return null
-        if (s.strokeId != null) {
-            val st = lvl.strokes.firstOrNull { it.id == s.strokeId } ?: return null
-            return st.bounds
-        }
-        val img = lvl.images.firstOrNull { it.id == s.imageId } ?: return null
-        return floatArrayOf(img.x, img.y, img.x + img.w, img.y + img.h)
-    }
-
-    /** Step 21: hit test in the CURRENT level, topmost first; visible+unlocked layers only. */
-    fun hitTest(lx: Float, ly: Float): Selection? {
-        val lvl = engine.camera.level
-        val layerIds = project.layers.filter { it.visible && !it.locked }.map { it.id }.toHashSet()
-        val zoom = engine.camera.zoom
-        val tol = (12f / zoom.toFloat())
-        for (st in lvl.strokes.asReversed()) {
-            if (st.layerId !in layerIds) continue
-            val hitR = tol + st.width / 2f
-            val b = st.bounds
-            if (lx < b[0] - hitR || lx > b[2] + hitR || ly < b[1] - hitR || ly > b[3] + hitR) continue
-            var hit = false
-            if (st.points.size == 1) {
-                val q = st.points[0]
-                hit = hypot(lx - q.x, ly - q.y) < hitR
-            } else {
-                for (i in 0 until st.points.size - 1) {
-                    val a = st.points[i]; val c = st.points[i + 1]
-                    if (distPointSeg(lx, ly, a.x, a.y, c.x, c.y) < hitR) { hit = true; break }
-                }
-            }
-            if (hit) return Selection(lvl.id, st.id, null)
-        }
-        for (img in lvl.images.asReversed()) {
-            if (img.layerId !in layerIds) continue
-            if (lx >= img.x && lx <= img.x + img.w && ly >= img.y && ly <= img.y + img.h)
-                return Selection(lvl.id, null, img.id)
-        }
-        return null
-    }
-
-    /** Step 21: SELECT tool enter/exit hooks (via beginStroke/addPoint/endStroke). */
-    private fun selectBegin(sx: Float, sy: Float, w: Int, h: Int) {
-        selectStartX = sx; selectStartY = sy; selectCurX = sx; selectCurY = sy
-        previewDx = 0f; previewDy = 0f
-        val sel = selection
-        if (sel != null) {
-            val l = engine.screenToLocal(sx, sy, w, h)
-            val b = selectionBounds(sel)
-            if (b != null && l[0] >= b[0] && l[0] <= b[2] && l[1] >= b[1] && l[1] <= b[3]) {
-                selectMoving = true
-                selectionSnapshot = sel
-                return
-            }
-        }
-        selectMoving = false
-    }
-
-    private fun selectMove(sx: Float, sy: Float, w: Int, h: Int) {
-        selectCurX = sx; selectCurY = sy
-        if (selectMoving) {
-            previewDx = (sx - selectStartX).toFloat() / engine.camera.zoom.toFloat()
-            previewDy = (sy - selectStartY).toFloat() / engine.camera.zoom.toFloat()
-            redraw?.invoke()
-        }
-    }
-
-    private fun selectEnd(w: Int, h: Int) {
-        if (selectMoving) {
-            val sel = selectionSnapshot
-            val movedPx = hypot(selectCurX - selectStartX, selectCurY - selectStartY)
-            if (sel != null && movedPx >= 3f) {
-                val dx = previewDx; val dy = previewDy
-                if (sel.strokeId != null)
-                    commands.exec(MoveStrokes(sel.levelId, sel.strokeId, dx, dy), engine, project)
-                else if (sel.imageId != null)
-                    commands.exec(MoveImage(sel.levelId, sel.imageId, dx, dy), engine, project)
-                autosave.schedule()
-            }
-            selectMoving = false
-            selectionSnapshot = null
-            previewDx = 0f; previewDy = 0f
-        } else {
-            // Pick: only if the pen stayed in place (< 10 px)
-            val movedPx = hypot(selectCurX - selectStartX, selectCurY - selectStartY)
-            if (movedPx < 10f) {
-                val l = engine.screenToLocal(selectStartX, selectStartY, w, h)
-                selection = hitTest(l[0].toFloat(), l[1].toFloat())
-            }
-        }
-        redraw?.invoke()
-    }
-
-    fun scaleSelection(factor: Float) {
-        val sel = selection ?: return
-        commands.exec(ScaleSelection(sel.levelId, sel, factor), engine, project)
-        autosave.schedule()
-        redraw?.invoke()
-    }
-
-    fun deleteSelection() {
-        val sel = selection ?: return
-        val lvl = engine.levels[sel.levelId] ?: return
-        if (sel.strokeId != null) {
-            val st = lvl.strokes.firstOrNull { it.id == sel.strokeId } ?: return
-            commands.exec(RemoveStrokes(sel.levelId, listOf(st)), engine, project)
-        } else if (sel.imageId != null) {
-            val img = lvl.images.firstOrNull { it.id == sel.imageId } ?: return
-            commands.exec(RemoveImage(sel.levelId, img), engine, project)
-        }
-        selection = null
-        autosave.schedule()
-        redraw?.invoke()
-    }
-
-    fun deselect() { selection = null; redraw?.invoke() }
-
-    // ---- Step 21: selection (single item, current level only) ----
+    // ---- Step 21: selection (single item; SELECT tool gesture: PICK vs MOVE) ----
     data class Selection(val levelId: Int, val strokeId: Long? = null, val imageId: Long? = null)
-    var selection: Selection? by androidx.compose.runtime.mutableStateOf(null)
-    var previewDx: Float = 0f      // local units, applied only for drawing while dragging
-    var previewDy: Float = 0f
-    // select-gesture state
+    var selection: Selection? by mutableStateOf<Selection?>(null)
+    var previewDx = 0f; var previewDy = 0f   // level-local units, live offset while dragging
+
     private enum class SelectMode { NONE, PICK, MOVE }
     private var selectMode = SelectMode.NONE
-    private var pickStartX = 0f; private var pickStartY = 0f   // screen
-    private var moveStartX = 0f; private var moveStartY = 0f   // screen
-    private var selItem: Selection? = null                     // item being moved
+    private var downX = 0f; private var downY = 0f   // gesture start (screen px)
+    private var curX = 0f; private var curY = 0f     // latest position (screen px)
 
     fun deselect() { selection = null; previewDx = 0f; previewDy = 0f; redraw?.invoke() }
 
-    /** Selected item's bounds in level-local units (x0,y0,x1,y1), or null. */
+    /** Selected item's bounds in its own level's local units (x0,y0,x1,y1) written into b; false if the item is gone. */
     fun selectionBounds(b: FloatArray): Boolean {
         val s = selection ?: return false
         val lvl = engine.levels[s.levelId] ?: return false
@@ -259,10 +129,10 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     fun hitTest(lx: Float, ly: Float): Selection? {
         val lvl = engine.camera.level
         val okLayers = project.layers.filter { it.visible && !it.locked }.map { it.id }.toHashSet()
-        val zoom = engine.camera.zoom
+        val tol = 12f / engine.camera.zoom.toFloat()   // ~12 screen px, in local units
         for (s in lvl.strokes.asReversed()) {
             if (s.layerId !in okLayers) continue
-            val hitR = 12f / zoom.toFloat() + s.width / 2f
+            val hitR = tol + s.width / 2f
             val b = s.bounds
             if (lx < b[0] - hitR || lx > b[2] + hitR || ly < b[1] - hitR || ly > b[3] + hitR) continue
             var hit = false
@@ -285,63 +155,91 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         return null
     }
 
+    /**
+     * Step 21 gesture start. Press INSIDE the current selection's bounds (with an
+     * 8px/zoom margin) -> MOVE. Anything else -> PICK (tap picks, tap on empty deselects).
+     */
     private fun selectBegin(sx: Float, sy: Float, w: Int, h: Int) {
+        downX = sx; downY = sy; curX = sx; curY = sy
+        previewDx = 0f; previewDy = 0f
         val sel = selection
-        if (sel != null) {
-            // inside the selection's bounds (with a small margin) -> start a MOVE
+        if (sel != null && sel.levelId == engine.camera.level.id) {
             val b = FloatArray(4)
             if (selectionBounds(b)) {
-                val zoom = engine.camera.zoom
                 val l = engine.screenToLocal(sx, sy, w, h)
-                val m = 8.0 / zoom
+                val m = 8.0 / engine.camera.zoom
                 if (l[0] >= b[0] - m && l[0] <= b[2] + m && l[1] >= b[1] - m && l[1] <= b[3] + m) {
                     selectMode = SelectMode.MOVE
-                    moveStartX = sx; moveStartY = sy
                     return
                 }
             }
         }
         selectMode = SelectMode.PICK
-        pickStartX = sx; pickStartY = sy
     }
 
     private fun selectMove(sx: Float, sy: Float, w: Int, h: Int) {
+        curX = sx; curY = sy
         if (selectMode != SelectMode.MOVE) return
         val zoom = engine.camera.zoom
-        previewDx = ((sx - moveStartX) / zoom).toFloat()
-        previewDy = ((sy - moveStartY) / zoom).toFloat()
+        previewDx = ((sx - downX) / zoom).toFloat()
+        previewDy = ((sy - downY) / zoom).toFloat()
         redraw?.invoke()
     }
 
     private fun selectEnd(w: Int, h: Int) {
-        when (selectMode) {
-            SelectMode.MOVE -> {
-                val sel = selItem ?: selection
-                val zoom = engine.camera.zoom
-                val dx = previewDx; val dy = previewDy
-                previewDx = 0f; previewDy = 0f
-                selectMode = SelectMode.NONE
-                if (sel != null && hypot(dx * zoom, dy * zoom) >= 3f) {
-                    if (sel.strokeId != null) commands.exec(MoveStrokes(sel.levelId, sel.strokeId, dx, dy), engine, project)
-                    else if (sel.imageId != null) commands.exec(MoveImage(sel.levelId, sel.imageId, dx, dy), engine, project)
-                    autosave.schedule()
-                }
-            }
-            SelectMode.PICK -> {
-                val moved = hypot(pickStartX - lastDownX, pickStartY - lastDownY) >= 10f
-                selectMode = SelectMode.NONE
-                if (!moved) {
-                    val l = engine.screenToLocal(pickStartX, pickStartY, w, h)
-                    selection = hitTest(l[0].toFloat(), l[1].toFloat())
-                    redraw?.invoke()
-                }
-            }
-            SelectMode.NONE -> {}
-        }
+        val mode = selectMode
         selectMode = SelectMode.NONE
+        val sel = selection
+        if (mode == SelectMode.MOVE) {
+            val dx = previewDx; val dy = previewDy
+            previewDx = 0f; previewDy = 0f
+            // < 3 px total drag = a tap on the item, not a move: commit nothing.
+            if (sel != null && hypot(curX - downX, curY - downY) >= 3f) {
+                if (sel.strokeId != null)
+                    commands.exec(MoveStrokes(sel.levelId, sel.strokeId, dx, dy), engine, project)
+                else if (sel.imageId != null)
+                    commands.exec(MoveImage(sel.levelId, sel.imageId, dx, dy), engine, project)
+                autosave.schedule()
+            }
+        } else if (mode == SelectMode.PICK) {
+            // Pick only on a real tap (< 10 px); tapping empty space deselects (hitTest -> null).
+            if (hypot(curX - downX, curY - downY) < 10f) {
+                val l = engine.screenToLocal(downX, downY, w, h)
+                selection = hitTest(l[0].toFloat(), l[1].toFloat())
+            }
+        }
+        redraw?.invoke()
     }
 
-    private var lastDownX = 0f; private var lastDownY = 0f
+    /** Second finger / stylus arrived mid-gesture: abort, no command, preview reset. */
+    private fun selectCancel() {
+        selectMode = SelectMode.NONE
+        previewDx = 0f; previewDy = 0f
+        redraw?.invoke()
+    }
+
+    /** Step 21: scale the selected item by factor around its own bounds center (one undo step). */
+    fun scaleSelection(factor: Float) {
+        val sel = selection ?: return
+        commands.exec(ScaleSelection(sel.levelId, sel.strokeId, sel.imageId, factor), engine, project)
+        autosave.schedule()
+        redraw?.invoke()
+    }
+
+    fun deleteSelection() {
+        val sel = selection ?: return
+        val lvl = engine.levels[sel.levelId] ?: return
+        if (sel.strokeId != null) {
+            val st = lvl.strokes.firstOrNull { it.id == sel.strokeId } ?: return
+            commands.exec(RemoveStrokes(sel.levelId, listOf(st)), engine, project)
+        } else if (sel.imageId != null) {
+            val img = lvl.images.firstOrNull { it.id == sel.imageId } ?: return
+            commands.exec(RemoveImage(sel.levelId, img), engine, project)
+        }
+        selection = null
+        autosave.schedule()
+        redraw?.invoke()
+    }
 
 
     fun activeLayer(): Layer? = project.layers.firstOrNull { it.id == activeLayerId }
@@ -353,22 +251,22 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     private var w0 = 0; private var h0 = 0
 
     fun beginStroke(sx: Float, sy: Float, p: Float, w: Int, h: Int) {
+        w0 = w; h0 = h
+        // Step 21: SELECT runs its own gesture and creates no stroke. It works
+        // regardless of the active layer state (the hit test filters layers itself).
+        if (tool == Tool.SELECT) { selectBegin(sx, sy, w, h); redraw?.invoke(); return }
         // Plan Step 10: the active layer must be visible and unlocked to draw.
         val layer = activeLayer()
         if (layer == null || !layer.visible || layer.locked) {
             active = null
             return
         }
-        w0 = w; h0 = h
         val l = engine.screenToLocal(sx, sy, w, h)
         activeLevel = engine.camera.level
         active = ArrayList<StrokePoint>().also { it.add(StrokePoint(l[0].toFloat(), l[1].toFloat(), p)) }
         pendingRemoved.clear()
         rasterBefore.clear()
         // Step 20: smoothing is applied to PEN/MARKER/AIRBRUSH only (eraser + raster exempt).
-        // SELECT uses the select gesture instead of drawing.
-        lastDownX = sx; lastDownY = sy
-        if (tool == Tool.SELECT) { selectBegin(sx, sy, w, h); return }
         smoothingActive = !tool.isRaster() && tool != Tool.ERASER
         haveFirstPoint = false
         if (smoothingActive) {
@@ -443,9 +341,9 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun endStroke() {
+        if (tool == Tool.SELECT) { selectEnd(w0, h0); return }
         val a = active; val lvl = activeLevel
         active = null
-        if (tool == Tool.SELECT) { selectEnd(w0, h0); return }
         if (a != null && lvl != null && a.isNotEmpty()) {
             // Step 20: if the pen lifted away from the last smoothed point, append the
             // raw final point (converted) so the stroke ends exactly where the pen did.
@@ -497,6 +395,7 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun cancelStroke() {
+        if (tool == Tool.SELECT) { selectCancel(); return }
         active = null; pendingRemoved.clear()
         // Cancelled raster stroke: roll tiles back to the pre-stroke state.
         if (rasterBefore.isNotEmpty()) {

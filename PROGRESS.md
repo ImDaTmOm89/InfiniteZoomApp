@@ -1,8 +1,33 @@
 # PROGRESS.md
 
-Last updated: 2026-10-23 (Step 20 done)
+Last updated: 2026-10-23 (Step 21 done)
 
 ## Finished steps
+- Step 21 — Select, move and scale — 2026-10-23 — **DONE, awaiting on-device verification**
+  Consolidated the duplicated half-finished Step-21 code that had been committed
+  in `058eee5` ("Before Hermes") into ONE implementation (that commit had the
+  selection block pasted twice into DrawingViewModel.kt and a wrong
+  ScaleSelection constructor call — it could not compile). `Tool.SELECT` +
+  toolbar "Select" button (● when active). Single-item
+  `Selection(levelId, strokeId|imageId)`; PICK vs MOVE gestures in
+  DrawingViewModel.selectBegin/Move/End/Cancel hooked into
+  beginStroke/addPoint/endStroke/cancelStroke (press inside the selected item's
+  bounds +8px/zoom margin -> MOVE with live previewDx/Dy preview; otherwise PICK
+  if the tap moved <10px; tapping empty space deselects; second finger cancels
+  with no command; SELECT is exempt from the active-layer guard). hitTest via
+  distPointSeg, tolerance 12px/zoom + width/2, topmost first, visible+unlocked
+  layers only, current level only. Commands: MoveStrokes/MoveImage (immutable
+  copies, id-stable so the selection survives undo; lateinit hardened to
+  nullable) and ScaleSelection (around the item's own bounds center; stroke
+  points+width scale, image w/h scale around center). CanvasRenderer: selected
+  item drawn offset by previewDx/Dy (offset threaded through
+  drawStroke/cull/drawImage) + dashed rectangle around its bounds (blue,
+  DashPathEffect 14/8) while SELECT is the active tool. New
+  ui/panels/SelectionPanel.kt: scale slider 25-400% commits ONE ScaleSelection
+  on release then snaps back to 100%, Delete, Deselect. Panel auto-opens on
+  pick and auto-closes on deselect (LaunchedEffect in MainScreen). New test
+  class SelectCommandsTest (4 tests: move/scale + undo for strokes and images).
+  Build + tests pass (6 tests). Decisions logged in DECISIONS.md (new file).
 - Step 20 — Stabilizer + pressure gamma — 2026-10-23 — DONE, awaiting on-device verification.
   `DrawingViewModel`: `stabilizer` (0..1, default 0.3) and `pressureGamma`
   (0.5..2.0, default 1.0) persisted in SharedPreferences("settings") and
@@ -134,16 +159,10 @@ does that override apply.
   (VelocityTracker in DrawingView NAVIGATE; fling > 300 px/s on UP,
   postOnAnimation loop, decay 0.92^(dt*60), stop < 30 px/s, touch cancels
   instantly, no momentum for pinch-zoom or drawing.)
-- Step 20 - Stroke smoothing and pressure curve — NOT STARTED
-  (stabilizer 0-1 default 0.3, pressureGamma 0.5-2 default 1.0 sliders in
-  BrushSettingsPanel, saved in SharedPreferences("settings"); screen-space
-  exponential smoothing in beginStroke/addPoint, raw end-point append on
-  endStroke, p^gamma curve; eraser and select tool exempt.)
-- Step 21 - Select, move and scale — NOT STARTED
-  (Tool.SELECT + left-strip button; Selection state with strokeId or
-  imageId, previewDx/Dy; hitTest via distPointSeg; MOVE vs PICK gestures;
-  MoveStrokes/MoveImage/ScaleSelection commands; dashed outline;
-  SelectionPanel with scale slider 25-400%, Delete, Deselect.)
+- Step 20 - Stroke smoothing and pressure curve — DONE 2026-10-23
+  (details in the Finished steps entry above; commit `4132f63`)
+- Step 21 - Select, move and scale — DONE 2026-10-23
+  (details in the Finished steps entry above; decisions in DECISIONS.md)
 - Step 22 - Pencil and charcoal brushes — NOT STARTED (OVERRIDES the
   BrushType rule for this step only)
   (adds PENCIL/CHARCOAL to BrushType and Tool; deterministic hash dabs,
@@ -166,10 +185,9 @@ format, stop and wait for "go".
 
 ## Step in progress
 
-- (none). PLAN.md is fully complete (Steps 1-18 + Phase 2 including undo,
-  memory cap, thread safety). No further steps are defined in plan.md. Any
-  next work needs new user direction (e.g. smudge tuning results from the
-  tablet, bug fixes, or a new feature request).
+- (none — Step 21 finished 2026-10-23, awaiting "go" for Step 22.) Remaining
+  steps are listed in the NOT STARTED section above (22 pencil/charcoal,
+  23 .uzw export/import, 24 rotation last).
 
 ## Next steps / Context (resume cold)
 
