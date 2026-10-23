@@ -24,6 +24,96 @@ class RemoveImage(val levelId: Int, val image: PlacedImage) : Command {
     override fun revert(e: InfiniteZoomEngine, p: Project) { if (!e.levels[levelId]!!.images.contains(image)) e.levels[levelId]!!.images.add(image) }
 }
 
+/** Step 21: move one stroke by (dx,dy) in level-local units. Immutable copy; keeps list index (draw order). */
+class MoveStrokes(val levelId: Int, val strokeId: Long, val dx: Float, val dy: Float) : Command {
+    private lateinit var old: Stroke
+    override fun apply(e: InfiniteZoomEngine, p: Project) {
+        val list = e.levels[levelId]!!.strokes
+        val i = list.indexOfFirst { it.id == strokeId }
+        if (i < 0) return
+        val s = list[i]
+        old = s
+        val moved = Stroke(s.id, s.layerId, s.brush, s.color, s.width, s.usePressure,
+            s.points.map { StrokePoint(it.x + dx, it.y + dy, it.p) })
+        list[i] = moved
+    }
+    override fun revert(e: InfiniteZoomEngine, p: Project) {
+        val list = e.levels[levelId]!!.strokes
+        val i = list.indexOfFirst { it.id == strokeId }
+        if (i >= 0) list[i] = old
+    }
+}
+
+/** Step 21: move one image by (dx,dy) in level-local units. Immutable copy; keeps list index. */
+class MoveImage(val levelId: Int, val imageId: Long, val dx: Float, val dy: Float) : Command {
+    private lateinit var old: PlacedImage
+    override fun apply(e: InfiniteZoomEngine, p: Project) {
+        val list = e.levels[levelId]!!.images
+        val i = list.indexOfFirst { it.id == imageId }
+        if (i < 0) return
+        val img = list[i]
+        old = img
+        list[i] = PlacedImage(img.id, img.layerId, img.file, img.x + dx, img.y + dy, img.w, img.h)
+    }
+    override fun revert(e: InfiniteZoomEngine, p: Project) {
+        val list = e.levels[levelId]!!.images
+        val i = list.indexOfFirst { it.id == imageId }
+        if (i >= 0) list[i] = old
+    }
+}
+
+/**
+ * Step 21: scale a selection (stroke or image) around the center of its own bounds.
+ * factor 1.0 = unchanged. Strokes: points and width scale. Images: x,y,w,h scale around the center.
+ */
+class ScaleSelection(val levelId: Int, val strokeId: Long?, val imageId: Long?, val factor: Float) : Command {
+    private lateinit var oldStroke: Stroke
+    private lateinit var newStroke: Stroke
+    private lateinit var oldImage: PlacedImage
+    private lateinit var newImage: PlacedImage
+    private var isStroke = false
+    private var applied = false
+    override fun apply(e: InfiniteZoomEngine, p: Project) {
+        val f = factor.toDouble()
+        if (strokeId != null) {
+            val list = e.levels[levelId]!!.strokes
+            val i = list.indexOfFirst { it.id == strokeId }
+            if (i < 0) return
+            val s = list[i]; oldStroke = s; isStroke = true
+            val cx = (s.bounds[0] + s.bounds[2]) / 2.0
+            val cy = (s.bounds[1] + s.bounds[3]) / 2.0
+            newStroke = Stroke(s.id, s.layerId, s.brush, s.color, (s.width * f).toFloat(), s.usePressure,
+                s.points.map { StrokePoint((cx + (it.x - cx) * f).toFloat(), (cy + (it.y - cy) * f).toFloat(), it.p) })
+            list[i] = newStroke
+            applied = true
+        } else if (imageId != null) {
+            val list = e.levels[levelId]!!.images
+            val i = list.indexOfFirst { it.id == imageId }
+            if (i < 0) return
+            val img = list[i]; oldImage = img; isStroke = false
+            val cx = img.x + img.w / 2.0
+            val cy = img.y + img.h / 2.0
+            val nw = img.w * f; val nh = img.h * f
+            newImage = PlacedImage(img.id, img.layerId, img.file,
+                (cx - nw / 2).toFloat(), (cy - nh / 2).toFloat(), nw.toFloat(), nh.toFloat())
+            list[i] = newImage
+            applied = true
+        }
+    }
+    override fun revert(e: InfiniteZoomEngine, p: Project) {
+        if (!applied) return
+        if (isStroke) {
+            val list = e.levels[levelId]!!.strokes
+            val i = list.indexOfFirst { it.id == strokeId }
+            if (i >= 0) list[i] = oldStroke
+        } else {
+            val list = e.levels[levelId]!!.images
+            val i = list.indexOfFirst { it.id == imageId }
+            if (i >= 0) list[i] = oldImage
+        }
+    }
+}
+
 class AddLayer(val layer: Layer, val index: Int) : Command {
     override fun apply(e: InfiniteZoomEngine, p: Project) { if (!p.layers.contains(layer)) p.layers.add(index.coerceIn(0, p.layers.size), layer) }
     override fun revert(e: InfiniteZoomEngine, p: Project) { p.layers.remove(layer) }
