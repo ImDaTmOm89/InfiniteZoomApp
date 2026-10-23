@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 const val F = 100.0   // zoom factor between levels
 
 @Serializable data class StrokePoint(val x: Float, val y: Float, val p: Float)
-@Serializable enum class BrushType { PEN, MARKER, AIRBRUSH }
+@Serializable enum class BrushType { PEN, MARKER, AIRBRUSH, PENCIL, CHARCOAL }
 @Serializable enum class LayerBlend { NORMAL, MULTIPLY, SCREEN, OVERLAY, DARKEN, LIGHTEN }
 @Serializable enum class PaperPattern { NONE, GRID, DOTS }
 @Serializable class Paper(var color: Int = -1, var pattern: PaperPattern = PaperPattern.NONE) // -1 = opaque white

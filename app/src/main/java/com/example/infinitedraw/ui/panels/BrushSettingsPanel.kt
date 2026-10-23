@@ -56,6 +56,28 @@ fun BrushSettingsPanel(vm: DrawingViewModel) {
             }
         }
 
+        // Step 22: grainy media brushes.
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(BrushType.PENCIL, BrushType.CHARCOAL).forEach { t ->
+                val tool = when (t) {
+                    BrushType.PENCIL -> Tool.PENCIL
+                    BrushType.CHARCOAL -> Tool.CHARCOAL
+                    else -> Tool.PEN
+                }
+                val selected = vm.tool == tool
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (selected) androidx.compose.ui.graphics.Color(0x332196F3)
+                            else androidx.compose.ui.graphics.Color.Transparent
+                        )
+                        .clickable { vm.tool = tool }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) { Text(t.name.lowercase().replaceFirstChar { it.uppercase() }) }
+            }
+        }
+
         Text("Size ${size.roundToInt()}px")
         Slider(value = size, onValueChange = { size = it; vm.brushSizePx = it }, valueRange = 1f..80f)
 

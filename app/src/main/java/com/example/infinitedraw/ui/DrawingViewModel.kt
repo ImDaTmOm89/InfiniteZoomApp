@@ -30,7 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import kotlin.math.hypot
 import kotlin.math.pow
 
-enum class Tool { PEN, MARKER, AIRBRUSH, ERASER, OIL, MIX, SMUDGE, RERASER, SELECT }
+enum class Tool { PEN, MARKER, AIRBRUSH, PENCIL, CHARCOAL, ERASER, OIL, MIX, SMUDGE, RERASER, SELECT }
 
 /** Raster (Phase 2) tools paint into 256x256 tiles instead of creating vector strokes. */
 fun Tool.isRaster(): Boolean = this == Tool.OIL || this == Tool.MIX || this == Tool.SMUDGE || this == Tool.RERASER
@@ -358,6 +358,8 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
                 val type = when (tool) {
                     Tool.MARKER -> BrushType.MARKER
                     Tool.AIRBRUSH -> BrushType.AIRBRUSH
+                    Tool.PENCIL -> BrushType.PENCIL
+                    Tool.CHARCOAL -> BrushType.CHARCOAL
                     else -> BrushType.PEN
                 }
                 val stroke = Stroke(
@@ -365,7 +367,7 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
                     type,
                     color,   // marker/airbrush alpha is applied at render time
                     brushSizePx / engine.camera.zoom.toFloat(),
-                    usePressure && tool == Tool.PEN, a.toList()
+                    usePressure && (tool == Tool.PEN || tool == Tool.PENCIL || tool == Tool.CHARCOAL), a.toList()
                 )
                 commands.exec(AddStroke(lvl.id, stroke), engine, project)
                 autosave.schedule()

@@ -36,6 +36,35 @@ simplest option, log it in DECISIONS.md, continue").
 - Raster tile content cannot be selected/moved/scaled — Step 21 covers vector
   strokes and placed images only.
 
+## Step 22 - Pencil and charcoal brushes (2026-10-23)
+
+- This step overrides the plan's "BrushType is exactly PEN/MARKER/AIRBRUSH"
+  rule for itself (stated in the step spec): BrushType is now
+  PEN/MARKER/AIRBRUSH/PENCIL/CHARCOAL. The eraser remains a Tool, never a
+  BrushType.
+- "spacing 0.35*rPx" is computed in LEVEL-LOCAL units (0.35 x the local,
+  pressure-interpolated dab radius), not screen pixels. Local-space spacing is
+  the only reading compatible with "grain stable while pan/zoom": the dab set
+  is fixed by stroke geometry, so zooming cannot re-shuffle the grain.
+- Deterministic hash: dabHash(strokeId, dabIndex) is a pure top-level function
+  (murmur-style Int finalizer). No Random, no image assets; the pattern is
+  identical every frame and across app runs. Off-screen dabs still consume an
+  index so panning cannot shift the pattern.
+- 3000-dab cap per stroke: the walk simply stops stamping, so the tail of a
+  pathological stroke renders unpainted. At normal sizes this is unreachable.
+- A dab is stamped at the start point and at the pen-lift end point so the
+  stroke ends are always covered; remaining arclength carries across segment
+  boundaries.
+- Pressure applies to PENCIL and CHARCOAL (dab radius), honoring the
+  Pressure-sensitive switch like PEN; the Step-20 stabilizer/smoothing
+  applies to them as vector tools.
+- Buttons: a second row in the Brush panel (Pencil / Charcoal boxes). The
+  step spec named no placement; the Brush panel is the vector-tool selector.
+- Pencil/charcoal size/alpha/jitter constants are first-pass values — expect
+  on-device tuning like the raster brush strengths.
+- Cull margins widened by 0.6*width*zoom for these brushes because jittered
+  dabs reach ~0.5 radius outside the bounds' padding.
+
 ## Known limitations (carried over from PLAN.md)
 
 - Strokes with screen coordinates beyond ±100000 are clamped, so huge strokes

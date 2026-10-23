@@ -7,6 +7,7 @@ import android.graphics.Path
 import com.example.infinitedraw.model.BrushType
 import com.example.infinitedraw.model.F
 import com.example.infinitedraw.model.Stroke
+import com.example.infinitedraw.model.StrokePoint
 import com.example.infinitedraw.model.ZoomLevel
 import com.example.infinitedraw.ui.DrawingViewModel
 import kotlin.math.hypot
@@ -225,9 +226,14 @@ class CanvasRenderer {
                 -1L, vm.activeLayerId, when (vm.tool) {
                     com.example.infinitedraw.ui.Tool.MARKER -> BrushType.MARKER
                     com.example.infinitedraw.ui.Tool.AIRBRUSH -> BrushType.AIRBRUSH
+                    com.example.infinitedraw.ui.Tool.PENCIL -> BrushType.PENCIL
+                    com.example.infinitedraw.ui.Tool.CHARCOAL -> BrushType.CHARCOAL
                     else -> BrushType.PEN
                 },
-                vm.color, vm.brushSizePx / cam.zoom.toFloat(), vm.usePressure && vm.tool == com.example.infinitedraw.ui.Tool.PEN, a.toList()
+                vm.color, vm.brushSizePx / cam.zoom.toFloat(),
+                vm.usePressure && (vm.tool == com.example.infinitedraw.ui.Tool.PEN ||
+                    vm.tool == com.example.infinitedraw.ui.Tool.PENCIL ||
+                    vm.tool == com.example.infinitedraw.ui.Tool.CHARCOAL), a.toList()
             )
             drawStroke(canvas, temp, cam.cx, cam.cy, cam.zoom, w, h, paint, path)
         }
@@ -251,7 +257,9 @@ class CanvasRenderer {
         val b = s.bounds
         val x0 = (b[0] + offX - camX) * zoom + w / 2.0; val x1 = (b[2] + offX - camX) * zoom + w / 2.0
         val y0 = (b[1] + offY - camY) * zoom + h / 2.0; val y1 = (b[3] + offY - camY) * zoom + h / 2.0
-        if (x1 < 0 || x0 > w || y1 < 0 || y0 > h) return   // cull
+        // Pencil/charcoal dabs jitter up to ~0.5 radius outside the padded bounds.
+        val pad = if (s.brush == BrushType.PENCIL || s.brush == BrushType.CHARCOAL) 0.6 * s.width * zoom else 0.0
+        if (x1 + pad < 0 || x0 - pad > w || y1 + pad < 0 || y0 - pad > h) return   // cull
 
         val xs = FloatArray(n); val ys = FloatArray(n); val rs = FloatArray(n)
         for (i in 0 until n) {
@@ -266,6 +274,11 @@ class CanvasRenderer {
         paint.color = s.color
 
         when (s.brush) {
+            BrushType.PENCIL, BrushType.CHARCOAL -> {
+                // Step 22: grainy dab stamping instead of a filled ribbon.
+                drawDabs(canvas, s, camX, camY, zoom, w, h, paint)
+                return
+            }
             BrushType.MARKER -> {
                 // flat, slightly translucent, pressure ignored
                 paint.alpha = ((paint.color ushr 24) * 0.7f).toInt().coerceAtMost(255)
@@ -302,5 +315,84 @@ class CanvasRenderer {
         canvas.drawCircle(xs[n - 1], ys[n - 1], rs[n - 1], paint)
     }
 
+    /**
+     * Step 22: PENCIL / CHARCOAL. Stamps small dabs along the polyline in
+     * LEVEL-LOCAL space (spacing = 0.35 x local radius) so the dab set is fixed
+     * by the stroke geometry alone: the grain cannot swim while panning or
+     * zooming. Each dab's offset, size and alpha come from dabHash(id, index) —
+     * a pure function, no Random, no image assets. Capped at 3000 dabs per stroke.
+     */
+    private fun drawDabs(canvas: Canvas, s: Stroke, camX: Double, camY: Double, zoom: Double,
+                         w: Int, h: Int, paint: Paint) {
+        val pts = s.points
+        val n = pts.size
+        if (n == 0 || s.width <= 0f) return
+        val pencil = s.brush == BrushType.PENCIL
+        // Brush character, first-pass values (tune on device):
+        val sizeLo = if (pencil) 0.55f else 0.45f    // dab radius as fraction of local radius
+        val sizeHi = if (pencil) 0.95f else 0.90f
+        val alphaLo = if (pencil) 0.60f else 0.28f    // per-dab alpha range (x stroke color alpha)
+        val alphaHi = if (pencil) 1.00f else 0.55f
+        val jitter = if (pencil) 0.30f else 0.45f     // center offset as fraction of local radius
+        val rgb = s.color and 0x00FFFFFF
+        val baseA = s.color ushr 24
+        paint.style = Paint.Style.FILL
+        paint.isAntiAlias = true
+        paint.maskFilter = null
+
+        var dab = 0
+        fun rad(p: StrokePoint): Float =
+            0.5f * s.width * (if (s.usePressure) 0.15f + 0.85f * p.p else 1f)
+
+        fun stamp(lx: Float, ly: Float, r: Float) {
+            if (dab >= 3000) return
+            val hv = dabHash(s.id, dab)
+            val f1 = (hv and 0xFF) / 255f
+            val f2 = ((hv ushr 8) and 0xFF) / 255f
+            val f3 = ((hv ushr 16) and 0xFF) / 255f
+            val f4 = ((hv ushr 24) and 0xFF) / 255f
+            dab++   // offscreen dabs still burn an index -> the grain cannot shift while panning
+            val dr = r * (sizeLo + (sizeHi - sizeLo) * f3)
+            val sx = ((lx + (f1 * 2f - 1f) * jitter * r - camX) * zoom + w / 2.0).toFloat()
+            val sy = ((ly + (f2 * 2f - 1f) * jitter * r - camY) * zoom + h / 2.0).toFloat()
+            val sr = (dr * zoom).toFloat()
+            if (sx + sr < 0f || sx - sr > w || sy + sr < 0f || sy - sr > h) return
+            val a = ((alphaLo + (alphaHi - alphaLo) * f4) * baseA).toInt().coerceIn(0, 255)
+            paint.color = (a shl 24) or rgb
+            canvas.drawCircle(sx, sy, sr, paint)
+        }
+
+        stamp(pts[0].x, pts[0].y, rad(pts[0]))      // start dab (also the whole stroke for n == 1)
+        var carry = 0.35f * rad(pts[0])             // arclength to the next dab
+        for (i in 0 until n - 1) {
+            if (dab >= 3000) break
+            val a = pts[i]; val c = pts[i + 1]
+            val segLen = hypot(c.x - a.x, c.y - a.y)
+            if (segLen < 1e-5f) continue
+            val ar = rad(a); val cr = rad(c)
+            var t = carry / segLen
+            while (t <= 1f && dab < 3000) {
+                val r = ar + (cr - ar) * t
+                stamp(a.x + (c.x - a.x) * t, a.y + (c.y - a.y) * t, r)
+                val sp = 0.35f * r
+                if (sp <= 1e-5f) break
+                t += sp / segLen
+            }
+            carry = if (t > 1f) (t - 1f) * segLen else 0f
+        }
+        if (n > 1 && dab < 3000) {                  // guarantee the pen-lift end is covered
+            val last = pts[n - 1]
+            stamp(last.x, last.y, rad(last))
+        }
+    }
+
     private fun clampS(v: Double): Float = v.coerceIn(-100000.0, 100000.0).toFloat()
+}
+
+/** Step 22: deterministic dab jitter hash — pure function of (strokeId, dabIndex); never Random. */
+internal fun dabHash(id: Long, dab: Int): Int {
+    var h = id.toInt() * 0x45d9f3b + dab * 0x2545f491
+    h = (h xor (h ushr 15)) * 0x2c1b3c6c
+    h = (h xor (h ushr 12)) * 0x297a2d39
+    return h xor (h ushr 15)
 }

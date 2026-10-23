@@ -1,8 +1,27 @@
 # PROGRESS.md
 
-Last updated: 2026-10-23 (Step 21 done)
+Last updated: 2026-10-23 (Step 22 done)
 
 ## Finished steps
+- Step 22 — Pencil and charcoal brushes — 2026-10-23 — **DONE, awaiting on-device verification**
+  (This step OVERRIDES the plan's "BrushType is exactly PEN/MARKER/AIRBRUSH"
+  rule for itself, per the step spec.) BrushType and Tool gain PENCIL and
+  CHARCOAL (Models.kt, DrawingViewModel). endStroke maps the new tools and
+  records pressure for PEN/PENCIL/CHARCOAL alike (honors the Pressure-
+  sensitive switch). CanvasRenderer.drawDabs stamps small dabs along the
+  polyline in LEVEL-LOCAL space — spacing 0.35 x local (pressure-interpolated)
+  radius, start + end dabs guaranteed — so the dab set is fixed by the stroke
+  geometry and the grain cannot swim while panning/zooming. Each dab's center
+  jitter, size and alpha come from dabHash(strokeId, dabIndex), a pure
+  top-level hash (no Random, no image assets); offscreen dabs still consume
+  an index so panning cannot shift the grain. Capped at 3000 dabs/stroke.
+  Pencil character: dab size 0.55-0.95r, alpha 0.60-1.00, jitter 0.30r;
+  charcoal: 0.45-0.90r, alpha 0.28-0.55, jitter 0.45r (first-pass values;
+  tune on device). Bounds cull widened by 0.6*width*zoom for these brushes
+  (jittered dabs reach outside the padded bounds). BrushSettingsPanel: second
+  tool row (Pencil, Charcoal; active highlighted). New DabHashTest (3 tests:
+  determinism, variation, non-degenerate output). Build + tests pass
+  (9 tests). Old saved projects unaffected (enum serialization is by name).
 - Step 21 — Select, move and scale — 2026-10-23 — **DONE, awaiting on-device verification**
   Consolidated the duplicated half-finished Step-21 code that had been committed
   in `058eee5` ("Before Hermes") into ONE implementation (that commit had the
@@ -163,11 +182,9 @@ does that override apply.
   (details in the Finished steps entry above; commit `4132f63`)
 - Step 21 - Select, move and scale — DONE 2026-10-23
   (details in the Finished steps entry above; decisions in DECISIONS.md)
-- Step 22 - Pencil and charcoal brushes — NOT STARTED (OVERRIDES the
-  BrushType rule for this step only)
-  (adds PENCIL/CHARCOAL to BrushType and Tool; deterministic hash dabs,
-  spacing 0.35*rPx, 3000-dab cap; no image assets; grain stable while
-  pan/zoom.)
+- Step 22 - Pencil and charcoal brushes — DONE 2026-10-23 (overrode the
+  BrushType rule for this step only, per spec)
+  (details in the Finished steps entry above; decisions in DECISIONS.md)
 - Step 23 - Project export and import (.uzw) — NOT STARTED
   (CreateDocument/OpenDocument; zip filesDir/projects/<name>/;
   display-name-derived folder name with " (2)", " (3)" dedup; zip-slip
@@ -185,9 +202,9 @@ format, stop and wait for "go".
 
 ## Step in progress
 
-- (none — Step 21 finished 2026-10-23, awaiting "go" for Step 22.) Remaining
-  steps are listed in the NOT STARTED section above (22 pencil/charcoal,
-  23 .uzw export/import, 24 rotation last).
+- (none — Step 22 finished 2026-10-23, awaiting "go" for Step 23.) Remaining
+  steps are listed in the NOT STARTED section above (23 .uzw export/import,
+  24 rotation last).
 
 ## Next steps / Context (resume cold)
 
