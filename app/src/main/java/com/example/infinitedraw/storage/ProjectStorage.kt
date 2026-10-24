@@ -1,6 +1,7 @@
 package com.example.infinitedraw.storage
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import com.example.infinitedraw.engine.Camera
 import com.example.infinitedraw.engine.InfiniteZoomEngine
@@ -177,18 +178,138 @@ object ProjectStorage {
         }
     }
 
-    fun load(ctx: Context, name: String, p: Project, e: InfiniteZoomEngine): Boolean {
+    /**
+     * Load a project. Pass a bitmaps map (the ViewModel's image cache) to also
+     * reload placed images from projects/<name>/images/ — Step 23 needs this for
+     * import, and it also fixes placed images not reappearing after an app restart.
+     */
+    fun load(ctx: Context, name: String, p: Project, e: InfiniteZoomEngine,
+             bitmaps: MutableMap<Long, android.graphics.Bitmap>? = null): Boolean {
         return try {
             val f = File(projectDir(ctx, name), "project.json")
             if (!f.exists()) return false
             deserialize(f.readText(), p, e)
             com.example.infinitedraw.render.RasterTiles.clearAll()
             loadTiles(ctx, name)
+            bitmaps?.clear()
+            loadImages(ctx, name, bitmaps)
             setLastProjectName(ctx, p.name)
             true
         } catch (t: Throwable) {
             Log.e(TAG, "load failed", t)
             false
+        }
+    }
+
+    /** Step 23: decode every projects/<name>/images/<id>.png into the bitmap cache. */
+    private fun loadImages(ctx: Context, name: String, bitmaps: MutableMap<Long, android.graphics.Bitmap>?) {
+        if (bitmaps == null) return
+        val dir = File(projectDir(ctx, name), "images")
+        val files = dir.listFiles { f -> f.name.endsWith(".png") } ?: return
+        for (f in files) {
+            val id = f.nameWithoutExtension.toLongOrNull() ?: continue
+            val bmp = android.graphics.BitmapFactory.decodeFile(f.absolutePath) ?: continue
+            bitmaps[id] = bmp
+        }
+    }
+
+    // ---- Step 23: .uzw export / import ----
+
+    private const val MAX_ENTRIES = 10000
+    private const val MAX_BYTES = 500L * 1024 * 1024
+
+    /** Step 23: SAF display name -> safe project folder base name. */
+    fun sanitizeProjectName(display: String): String {
+        val stripped = display.substringBeforeLast('.').replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
+        val cleaned = stripped.ifBlank { "Imported project" }
+        return if (cleaned == "." || cleaned == "..") "Imported project" else cleaned
+    }
+
+    /** Step 23: first unused folder name under dir; appends " (2)", " (3)"... while taken. */
+    fun dedupFolderName(dir: File, base: String): String {
+        if (!File(dir, base).exists()) return base
+        var n = 2
+        while (File(dir, "$base ($n)").exists()) n++
+        return "$base ($n)"
+    }
+
+    /**
+     * Step 23: zip the whole project folder (project.json, images/, tiles/) into
+     * the SAF target. Returns null on success, a user-facing error message on failure.
+     */
+    fun exportUzw(ctx: Context, name: String, uri: Uri): String? {
+        return try {
+            val dir = projectDir(ctx, name)
+            if (!dir.isDirectory) return "Nothing to export: project folder '$name' not found"
+            ctx.contentResolver.openOutputStream(uri)?.use { raw ->
+                java.util.zip.ZipOutputStream(raw.buffered()).use { zos ->
+                    dir.walkTopDown().filter { it.isFile }.forEach { f ->
+                        zos.putNextEntry(java.util.zip.ZipEntry(f.relativeTo(dir).invariantSeparatorsPath))
+                        f.inputStream().use { it.copyTo(zos) }
+                        zos.closeEntry()
+                    }
+                }
+            } ?: return "Could not open the export target"
+            null
+        } catch (t: Throwable) {
+            Log.e(TAG, "exportUzw failed", t)
+            "Export failed: ${t.message ?: t.javaClass.simpleName}"
+        }
+    }
+
+    /** Step 23: result of unzipImport — exactly one of folder / error is set. */
+    class ImportOutcome(val folder: String? = null, val error: String? = null)
+
+    /**
+     * Step 23: unzip a .uzw into a NEW deduped folder under projects/. Guards:
+     * zip-slip canonical-path check, 10,000-entry cap, 500 MB total cap, and a
+     * required project.json. On failure the partial folder is deleted. Never throws.
+     */
+    fun unzipImport(ctx: Context, uri: Uri): ImportOutcome {
+        var dest: File? = null
+        return try {
+            var display = "Imported project"
+            ctx.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (i >= 0 && c.moveToFirst()) {
+                    val d = c.getString(i)
+                    if (!d.isNullOrBlank()) display = d
+                }
+            }
+            val base = sanitizeProjectName(display)
+            val pdir = projectsDir(ctx).apply { mkdirs() }
+            val folder = dedupFolderName(pdir, base)
+            val target = File(pdir, folder).apply { mkdirs() }
+            dest = target
+            val destCanon = target.canonicalPath + File.separator
+            var entries = 0
+            var total = 0L
+            var sawManifest = false
+            ctx.contentResolver.openInputStream(uri)?.use { raw ->
+                java.util.zip.ZipInputStream(raw.buffered()).use { zis ->
+                    while (true) {
+                        val entry = zis.nextEntry ?: break
+                        if (entry.isDirectory) continue
+                        entries++
+                        if (entries > MAX_ENTRIES) throw IllegalStateException("the archive has more than $MAX_ENTRIES files")
+                        if (entry.name == "project.json") sawManifest = true
+                        val out = File(target, entry.name)
+                        if (!out.canonicalPath.startsWith(destCanon))
+                            throw IllegalStateException("unsafe entry '${entry.name}'")
+                        out.parentFile?.mkdirs()
+                        java.io.FileOutputStream(out).use { fout -> total += zis.copyTo(fout) }
+                        if (total > MAX_BYTES) throw IllegalStateException("the archive is larger than 500 MB")
+                        zis.closeEntry()
+                    }
+                }
+            } ?: throw IllegalStateException("could not open the selected file")
+            if (!sawManifest) throw IllegalStateException("project.json missing - not an app project archive")
+            Log.i(TAG, "imported .uzw into $folder ($entries files, $total bytes)")
+            ImportOutcome(folder = folder)
+        } catch (t: Throwable) {
+            Log.e(TAG, "unzipImport failed", t)
+            dest?.deleteRecursively()
+            ImportOutcome(error = "Import failed: ${t.message ?: t.javaClass.simpleName}")
         }
     }
 }

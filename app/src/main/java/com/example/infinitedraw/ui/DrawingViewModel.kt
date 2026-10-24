@@ -4,6 +4,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.example.infinitedraw.engine.InfiniteZoomEngine
 import com.example.infinitedraw.engine.AddImage
 import com.example.infinitedraw.engine.AddLayer
@@ -24,6 +25,7 @@ import com.example.infinitedraw.model.Stroke
 import com.example.infinitedraw.model.StrokePoint
 import com.example.infinitedraw.model.ZoomLevel
 import com.example.infinitedraw.storage.Autosave
+import com.example.infinitedraw.storage.ProjectStorage
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
@@ -543,6 +545,47 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
                 android.util.Log.e("DrawingViewModel", "exportPng failed", t)
             }
             onDone(path)
+        }
+    }
+
+    // ---- Step 23: .uzw export / import ----
+
+    /** Step 23: zip the current project's folder to the SAF target (flushes first). Null = success, else error text. */
+    fun exportUzw(uri: android.net.Uri, onDone: (String?) -> Unit = {}) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            var msg: String? = null
+            try {
+                autosave.flushNow()   // project.json / images / tiles must be current before zipping
+                msg = ProjectStorage.exportUzw(ctx, project.name, uri)
+            } catch (t: Throwable) {
+                android.util.Log.e("DrawingViewModel", "exportUzw failed", t)
+                msg = "Export failed: ${t.message ?: t.javaClass.simpleName}"
+            }
+            onDone(msg)
+        }
+    }
+
+    /** Step 23: import a .uzw as a new project and switch to it. Null = success, else error text. */
+    fun importUzw(uri: android.net.Uri, onDone: (String?) -> Unit = {}) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            val res = ProjectStorage.unzipImport(ctx, uri)
+            if (res.error != null) { onDone(res.error); return@launch }
+            var err: String? = null
+            withContext(Dispatchers.Main) {
+                // Switch on the main thread like the startup load: the renderer
+                // reads engine/project from this thread.
+                if (ProjectStorage.load(ctx, res.folder!!, project, engine, bitmaps)) {
+                    project.name = res.folder   // apply() restored the DTO name; keep folder <-> name invariant
+                    commands.clear()            // undo commands referenced the old project
+                    selection = null
+                    pendingRemoved.clear()
+                    redraw?.invoke()
+                } else err = "Import failed: could not load '${res.folder}'"
+            }
+            if (err == null) autosave.flushNow()   // persist the corrected name + last-project pref
+            onDone(err)
         }
     }
 }

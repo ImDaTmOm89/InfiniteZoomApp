@@ -89,10 +89,30 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
         }
     }
 
+    // Step 23: .uzw export / import launchers.
+    val uzwExport = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) {
+            vm.exportUzw(uri) { err ->
+                android.widget.Toast.makeText(context,
+                    err ?: "Project exported",
+                    android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    val uzwImport = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            vm.importUzw(uri) { err ->
+                android.widget.Toast.makeText(context,
+                    err ?: "Project imported",
+                    android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(Unit) {
         val last = ProjectStorage.lastProjectName(context)
-        if (last != null) ProjectStorage.load(context, last, vm.project, vm.engine)
+        if (last != null) ProjectStorage.load(context, last, vm.project, vm.engine, vm.bitmaps)
         vm.redraw?.invoke()
     }
     // Step 21: the Selection panel follows the selection (opens on pick, closes on deselect).
@@ -163,6 +183,12 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
                         if (path != null) "Saved: $path" else "Export failed",
                         android.widget.Toast.LENGTH_SHORT).show()
                 }
+            }
+            toolbarButton("Export .uzw") {
+                uzwExport.launch("${vm.project.name}.uzw")
+            }
+            toolbarButton("Import .uzw") {
+                uzwImport.launch(arrayOf("*/*"))
             }
         }
 

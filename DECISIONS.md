@@ -65,6 +65,38 @@ simplest option, log it in DECISIONS.md, continue").
 - Cull margins widened by 0.6*width*zoom for these brushes because jittered
   dabs reach ~0.5 radius outside the bounds' padding.
 
+## Step 23 - Project export and import (.uzw) (2026-10-23)
+
+- OpenDocument launches with mime arrayOf("*/*"): ".uzw" has no registered
+  MIME type, and filtering to zip/octet-stream hides real files in some
+  pickers. CreateDocument uses "application/zip" with suggested name
+  "<project>.uzw".
+- Import folder name derives from the SAF DISPLAY_NAME (extension stripped,
+  path-unsafe chars replaced by "_"), deduped with " (2)", " (3)"...; falls
+  back to "Imported project".
+- After unzip, project.json still carries the ORIGINAL project name, and
+  load() would restore it into project.name — the next autosave would then
+  write into the original project's folder and merge the two. So import
+  sets project.name to the new deduped folder and flushes immediately; the
+  flush also fixes the last-project pref (load() had written the DTO name).
+- Project switch happens on the MAIN thread (the renderer reads engine/
+  project there, like the startup load); unzip runs on Dispatchers.IO.
+  Undo stack, selection and pendingRemoved are cleared on switch (they
+  referenced the old project).
+- ProjectStorage.load gained an optional bitmaps map + loadImages():
+  placed-image bitmaps were only ever populated by addImage, so placed
+  images were invisible after an app restart (a pre-existing Step 16 gap —
+  "kill and reopen: everything identical" never fully held for images).
+  Startup and import now pass vm.bitmaps. Fixed here because import shares
+  the load path; without it imported images would be invisible.
+- Guards, per spec: zip-slip canonical-path prefix check on every entry;
+  more than 10,000 entries or 500 MB uncompressed aborts the import; a
+  missing project.json rejects the archive as "not an app project"; every
+  failure deletes the partial folder and surfaces a Toast. No crash paths.
+- Export zips the whole projects/<name>/ folder as-is (project.json,
+  images/, tiles/) after an autosave.flushNow, so the archive matches the
+  on-screen state.
+
 ## Known limitations (carried over from PLAN.md)
 
 - Strokes with screen coordinates beyond ±100000 are clamped, so huge strokes

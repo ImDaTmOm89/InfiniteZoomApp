@@ -1,8 +1,28 @@
 # PROGRESS.md
 
-Last updated: 2026-10-23 (Step 22 done)
+Last updated: 2026-10-23 (Step 23 done)
 
 ## Finished steps
+- Step 23 — Project export and import (.uzw) — 2026-10-23 — **DONE, awaiting on-device verification**
+  Toolbar: "Export .uzw" (CreateDocument("application/zip"), suggested name
+  "<name>.uzw") and "Import .uzw" (OpenDocument, */*). DrawingViewModel.
+  exportUzw/importUzw run on Dispatchers.IO with Toast feedback; all failures
+  produce a message, never a crash. ProjectStorage.exportUzw: flushes first
+  (autosave.flushNow) so the archive matches the on-screen state, then zips
+  the whole projects/<name>/ folder (project.json, images/, tiles/) to the
+  SAF stream. ProjectStorage.unzipImport: display-name-derived folder
+  (extension stripped, unsafe chars -> "_"), " (2)"/" (3)" dedup,
+  zip-slip canonical-path check, 10,000-entry cap, 500 MB uncompressed cap,
+  project.json required at the root; on any failure the partial folder is
+  deleted. Import then switches projects on the MAIN thread (same as the
+  startup load), sets project.name to the new folder (the DTO name would
+  otherwise point autosave back at the ORIGINAL project folder) and
+  flushes; undo stack, selection and pendingRemoved cleared on switch.
+  ProjectStorage.load gained an optional bitmaps map + loadImages():
+  placed-image bitmaps were only ever populated by addImage, so images
+  were missing after an app restart — startup and import now pass
+  vm.bitmaps, fixing that pre-existing Step 16 gap. New UzwImportTest
+  (2 tests: name sanitizing, folder dedup). Build + tests pass (11 tests).
 - Step 22 — Pencil and charcoal brushes — 2026-10-23 — **DONE, awaiting on-device verification**
   (This step OVERRIDES the plan's "BrushType is exactly PEN/MARKER/AIRBRUSH"
   rule for itself, per the step spec.) BrushType and Tool gain PENCIL and
@@ -185,11 +205,8 @@ does that override apply.
 - Step 22 - Pencil and charcoal brushes — DONE 2026-10-23 (overrode the
   BrushType rule for this step only, per spec)
   (details in the Finished steps entry above; decisions in DECISIONS.md)
-- Step 23 - Project export and import (.uzw) — NOT STARTED
-  (CreateDocument/OpenDocument; zip filesDir/projects/<name>/;
-  display-name-derived folder name with " (2)", " (3)" dedup; zip-slip
-  canonical-path check; 10,000-entry / 500 MB limits; project.json required;
-  Toasts; try/catch, never crash.)
+- Step 23 - Project export and import (.uzw) — DONE 2026-10-23
+  (details in the Finished steps entry above; decisions in DECISIONS.md)
 - Step 24 - Rotation — NOT STARTED — **do last** (touches every coordinate
   conversion)
   (Camera.rotation radians; engine screenToLocal/panBy/transformAt per
@@ -202,9 +219,8 @@ format, stop and wait for "go".
 
 ## Step in progress
 
-- (none — Step 22 finished 2026-10-23, awaiting "go" for Step 23.) Remaining
-  steps are listed in the NOT STARTED section above (23 .uzw export/import,
-  24 rotation last).
+- (none — Step 23 finished 2026-10-23, awaiting "go" for Step 24.) The only
+  remaining step is 24 (rotation) in the NOT STARTED section above.
 
 ## Next steps / Context (resume cold)
 
