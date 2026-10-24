@@ -182,9 +182,11 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     private fun selectMove(sx: Float, sy: Float, w: Int, h: Int) {
         curX = sx; curY = sy
         if (selectMode != SelectMode.MOVE) return
-        val zoom = engine.camera.zoom
-        previewDx = ((sx - downX) / zoom).toFloat()
-        previewDy = ((sy - downY) / zoom).toFloat()
+        // Step 24: preview offset in LOCAL units — via screenToLocal so it follows rotation too.
+        val p0 = engine.screenToLocal(downX, downY, w, h)
+        val p1 = engine.screenToLocal(sx, sy, w, h)
+        previewDx = (p1[0] - p0[0]).toFloat()
+        previewDy = (p1[1] - p0[1]).toFloat()
         redraw?.invoke()
     }
 

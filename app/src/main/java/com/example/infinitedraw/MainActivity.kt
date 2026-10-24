@@ -163,6 +163,10 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
                 vm.engine.camera.zoom = 1.0; vm.engine.camera.cx = 0.0; vm.engine.camera.cy = 0.0
                 vm.redraw?.invoke()
             }
+            toolbarButton("Reset Rotation") {
+                vm.engine.camera.rotation = 0.0
+                vm.redraw?.invoke()
+            }
             // Step 21: Select tool — tap picks, drag inside the dashed box moves.
             toolbarButton(if (vm.tool == com.example.infinitedraw.ui.Tool.SELECT) "Select ●" else "Select") {
                 vm.tool = com.example.infinitedraw.ui.Tool.SELECT

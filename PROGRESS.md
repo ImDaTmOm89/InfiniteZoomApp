@@ -1,8 +1,33 @@
 # PROGRESS.md
 
-Last updated: 2026-10-23 (Step 23 done)
+Last updated: 2026-10-23 (Step 24 done — all planned steps implemented)
 
 ## Finished steps
+- Step 24 — Rotation — 2026-10-23 — **DONE, awaiting on-device verification** (last planned step)
+  The spec's "given formulas" were never recorded in the repo, so the transforms
+  were re-derived from first principles and logged in DECISIONS.md: screen =
+  center + R(theta) * (world - camera) * zoom. Engine: Camera.rotation (radians);
+  screenToLocal and panBy now apply R(-theta); new transformAt(factor, delta,
+  sx, sy) does zoom + rotate in ONE anchored step (the world point under the
+  anchor stays fixed); zoomAt is a thin wrapper over transformAt (existing call
+  sites unchanged); rotation wrapped to [-pi, pi]. DrawingView navigate:
+  two-finger twist (angle between fingers) applied together with the pinch
+  factor at the finger midpoint; single-finger pan never rotates; fling
+  (Step 19) works rotated automatically because panBy is rotation-aware.
+  Renderer: shared worldToScreen helper (exact inverse of screenToLocal) used
+  by drawStroke/drawDabs/drawImage/drawRasterTiles/drawSelectionOutline; ALL
+  rect culls replaced by circle culling (bounds center + half-diagonal radius;
+  pencil/charcoal jitter pad kept; the drawLevelContent pre-cull removed);
+  paper grid drawn via canvas.rotate about the screen center with ranges
+  extended by the screen diagonal; images and raster tiles drawn via
+  canvas.rotate about their own screen center; the selection outline is now a
+  dashed quad through the 4 rotated bounds corners. DrawingViewModel.selectMove
+  derives the move preview from two screenToLocal calls (rotation-aware).
+  Toolbar: "Reset Rotation" button; debug overlay shows rot in degrees.
+  Persistence: CameraDto.rotation with default 0.0 (old saves load unrotated).
+  New RotationTest (4 tests: screen center anchor, pan direction at 90 deg,
+  transformAt anchor invariance, rotation stays wrapped). Build + tests pass
+  (15 tests).
 - Step 23 — Project export and import (.uzw) — 2026-10-23 — **DONE, awaiting on-device verification**
   Toolbar: "Export .uzw" (CreateDocument("application/zip"), suggested name
   "<name>.uzw") and "Import .uzw" (OpenDocument, */*). DrawingViewModel.
@@ -185,14 +210,10 @@ Last updated: 2026-10-23 (Step 23 done)
   cancels fling). Pinch-zoom (2-finger) never starts a fling; drawing mode
   unaffected. Build + tests pass.
 
-## NOT STARTED (new plan section added 2026-10-22)
+## Steps 19-24 (added 2026-10-22) — ALL DONE
 
-Order is fixed as listed. **Do NOT begin ANY of these until Steps 3-18
-are finished and verified on the tablet.** One step at a time, stop and
-wait for "go" after each. All AGENTS.md / PLAN.md section 0 rules apply
-(one step at a time, locked files, no new dependencies, PowerShell,
-standard report format). Only where a step explicitly overrides a rule
-does that override apply.
+Order was fixed as listed; every entry below is finished. One step at a time,
+standard report format, PLAN.md section 0 rules applied throughout.
 
 - Step 19 - Swipe momentum — DONE 2026-10-22
   (VelocityTracker in DrawingView NAVIGATE; fling > 300 px/s on UP,
@@ -207,20 +228,18 @@ does that override apply.
   (details in the Finished steps entry above; decisions in DECISIONS.md)
 - Step 23 - Project export and import (.uzw) — DONE 2026-10-23
   (details in the Finished steps entry above; decisions in DECISIONS.md)
-- Step 24 - Rotation — NOT STARTED — **do last** (touches every coordinate
-  conversion)
-  (Camera.rotation radians; engine screenToLocal/panBy/transformAt per
-  given formulas; shared worldToScreen helper in renderer; circle culling;
-  image + paper rotation with canvas.rotate; two-finger twist in navigate;
-  Reset rotation button; CameraDto persistence; fling works rotated.)
+- Step 24 - Rotation — DONE 2026-10-23
+  (details in the Finished steps entry above; decisions in DECISIONS.md)
 
 After EACH of these steps: update PROGRESS.md, report in the standard
 format, stop and wait for "go".
 
 ## Step in progress
 
-- (none — Step 23 finished 2026-10-23, awaiting "go" for Step 24.) The only
-  remaining step is 24 (rotation) in the NOT STARTED section above.
+- (none — Step 24 finished 2026-10-23. ALL planned steps are now implemented:
+  Steps 1-18, Phase 2, and Steps 19-24. Every step from 19 on is awaiting
+  on-device verification. Any further work needs new user direction
+  (bug reports, tuning feedback, or new features).
 
 ## Next steps / Context (resume cold)
 

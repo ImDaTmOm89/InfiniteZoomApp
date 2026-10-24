@@ -1,8 +1,13 @@
 package com.example.infinitedraw.engine
 import com.example.infinitedraw.model.*
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.PI
+import kotlin.math.sin
 
-class Camera(var level: ZoomLevel, var cx: Double = 0.0, var cy: Double = 0.0, var zoom: Double = 1.0)
+/** Step 24: `rotation` in radians — the world appears rotated about the screen center. */
+class Camera(var level: ZoomLevel, var cx: Double = 0.0, var cy: Double = 0.0, var zoom: Double = 1.0,
+             var rotation: Double = 0.0)
 
 class InfiniteZoomEngine {
     companion object { const val DESCEND_AT = 100.0; const val ASCEND_BELOW = 0.5; const val CHILD_REACH = 500.0 }
@@ -12,18 +17,48 @@ class InfiniteZoomEngine {
     var nextLevelId = 1
     var nextStrokeId = 1L
 
-    fun screenToLocal(sx: Float, sy: Float, w: Int, h: Int): DoubleArray = doubleArrayOf(
-        camera.cx + (sx - w / 2.0) / camera.zoom, camera.cy + (sy - h / 2.0) / camera.zoom)
+    /**
+     * Step 24: screen -> local with rotation. The screen shows the world rotated
+     * by `rotation`, so a screen delta maps to a world delta via R(-rotation):
+     * [c, s; -s, c] with c = cos(r), s = sin(r).
+     */
+    fun screenToLocal(sx: Float, sy: Float, w: Int, h: Int): DoubleArray {
+        val c = cos(camera.rotation); val s = sin(camera.rotation)
+        val px = sx - w / 2.0; val py = sy - h / 2.0
+        return doubleArrayOf(
+            camera.cx + (c * px + s * py) / camera.zoom,
+            camera.cy + (-s * px + c * py) / camera.zoom)
+    }
 
-    fun panBy(dxPx: Float, dyPx: Float) { camera.cx -= dxPx / camera.zoom; camera.cy -= dyPx / camera.zoom }
+    /** Step 24: screen drag -> camera shift, so content follows the finger under rotation. */
+    fun panBy(dxPx: Float, dyPx: Float) {
+        val c = cos(camera.rotation); val s = sin(camera.rotation)
+        camera.cx -= (c * dxPx + s * dyPx) / camera.zoom
+        camera.cy -= (-s * dxPx + c * dyPx) / camera.zoom
+    }
 
-    /** factor > 1 zooms in. Keeps the local point under (sx,sy) fixed. */
-    fun zoomAt(factor: Double, sx: Float, sy: Float, w: Int, h: Int) {
+    /**
+     * Step 24: factor > 1 zooms in, delta > 0 rotates counter-clockwise; both keep
+     * the local point under (sx,sy) fixed. One anchored transform for pinch + twist.
+     */
+    fun transformAt(factor: Double, delta: Double, sx: Float, sy: Float, w: Int, h: Int) {
         val p = screenToLocal(sx, sy, w, h)
         camera.zoom *= factor
-        camera.cx = p[0] - (sx - w / 2.0) / camera.zoom
-        camera.cy = p[1] - (sy - h / 2.0) / camera.zoom
+        camera.rotation = normalizeAngle(camera.rotation + delta)
+        val c = cos(camera.rotation); val s = sin(camera.rotation)
+        val px = sx - w / 2.0; val py = sy - h / 2.0
+        camera.cx = p[0] - (c * px + s * py) / camera.zoom
+        camera.cy = p[1] - (-s * px + c * py) / camera.zoom
         normalize()
+    }
+
+    /** factor > 1 zooms in. Keeps the local point under (sx,sy) fixed. */
+    fun zoomAt(factor: Double, sx: Float, sy: Float, w: Int, h: Int) = transformAt(factor, 0.0, sx, sy, w, h)
+
+    /** Step 24: wrap to [-PI, PI) so long twist streams never lose precision. */
+    private fun normalizeAngle(a: Double): Double {
+        val t = (a + PI) % (2 * PI)
+        return if (t < 0) t + PI else t - PI
     }
 
     fun normalize() {

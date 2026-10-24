@@ -10,12 +10,16 @@ import com.example.infinitedraw.model.Stroke
 import com.example.infinitedraw.model.StrokePoint
 import com.example.infinitedraw.model.ZoomLevel
 import com.example.infinitedraw.ui.DrawingViewModel
+import kotlin.math.cos
 import kotlin.math.hypot
+import kotlin.math.sin
 
 class CanvasRenderer {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
     private val dashEffect = android.graphics.DashPathEffect(floatArrayOf(14f, 8f), 0f)
+    // Step 24: worldToScreen scratch buffer (never used reentrantly within one draw path).
+    private val wsOut = FloatArray(2)
 
     private class Frame(val level: ZoomLevel, val x: Double, val y: Double, val z: Double, val exclude: ZoomLevel?)
 
@@ -28,7 +32,7 @@ class CanvasRenderer {
         paint.style = Paint.Style.FILL
         paint.color = Color.BLACK
         paint.textSize = 40f
-        canvas.drawText("level=${cam.level.id} zoom=${cam.zoom}", 20f, 60f, paint)
+        canvas.drawText("level=${cam.level.id} zoom=${cam.zoom} rot=${Math.toDegrees(cam.rotation).toInt()}", 20f, 60f, paint)
     }
 
     /** Paper color + grid/dots in screen space; follows the current camera. */
@@ -52,26 +56,41 @@ class CanvasRenderer {
 
         val firstX = x0 - Math.floor(x0 / sp) * sp
         val firstY = y0 - Math.floor(y0 / sp) * sp
+        // Step 24: the grid is anchored to the world, so rotate the canvas with the
+        // camera and extend the ranges by the screen diagonal so the rotated grid
+        // still covers the viewport corners.
+        val diag = kotlin.math.hypot(w.toDouble(), h.toDouble())
+        val save = canvas.save()
+        canvas.rotate(Math.toDegrees(cam.rotation).toFloat(), w / 2f, h / 2f)
         var gx = firstX
-        while (gx <= w) {
-            if (paper.pattern == com.example.infinitedraw.model.PaperPattern.GRID) {
-                canvas.drawLine(gx.toFloat(), 0f, gx.toFloat(), h.toFloat(), paint)
-            } else {
-                var gy = firstY
-                while (gy <= h) {
-                    canvas.drawPoint(gx.toFloat(), gy.toFloat(), paint)
-                    gy += sp
-                }
-            }
-            gx += sp
-        }
+        while (gx > -diag) gx -= sp
         if (paper.pattern == com.example.infinitedraw.model.PaperPattern.GRID) {
+            var x = gx
+            while (x <= w + diag) {
+                canvas.drawLine(x.toFloat(), (-diag).toFloat(), x.toFloat(), (h + diag).toFloat(), paint)
+                x += sp
+            }
             var gy = firstY
-            while (gy <= h) {
-                canvas.drawLine(0f, gy.toFloat(), w.toFloat(), gy.toFloat(), paint)
+            while (gy > -diag) gy -= sp
+            while (gy <= h + diag) {
+                canvas.drawLine((-diag).toFloat(), gy.toFloat(), (w + diag).toFloat(), gy.toFloat(), paint)
                 gy += sp
             }
+        } else {
+            var gy = firstY
+            while (gy > -diag) gy -= sp
+            val gyStart = gy
+            var x = gx
+            while (x <= w + diag) {
+                var yy = gyStart
+                while (yy <= h + diag) {
+                    canvas.drawPoint(x.toFloat(), yy.toFloat(), paint)
+                    yy += sp
+                }
+                x += sp
+            }
         }
+        canvas.restoreToCount(save)
     }
 
     fun renderWorld(canvas: Canvas, vm: DrawingViewModel, w: Int, h: Int) {
@@ -104,7 +123,6 @@ class CanvasRenderer {
 
     private fun drawLevelContent(canvas: Canvas, vm: DrawingViewModel, level: ZoomLevel, camX: Double, camY: Double,
                                  zoom: Double, w: Int, h: Int) {
-        val z = zoom.toFloat()
         // Step 21: during a move gesture the selected item is drawn offset by the live preview.
         val sel = vm.selection
         val selOff = sel != null && sel.levelId == level.id && (vm.previewDx != 0f || vm.previewDy != 0f)
@@ -125,8 +143,7 @@ class CanvasRenderer {
                 if (s in vm.pendingRemoved) continue
                 val sox = if (selOff && sel!!.strokeId == s.id) vm.previewDx.toDouble() else 0.0
                 val soy = if (selOff && sel!!.strokeId == s.id) vm.previewDy.toDouble() else 0.0
-                if (cull(s, camX.toFloat(), camY.toFloat(), z, w, h, sox, soy)) continue
-                drawStroke(canvas, s, camX, camY, zoom, w, h, paint, path, sox, soy)
+                drawStroke(canvas, s, camX, camY, zoom, w, h, paint, path, sox, soy, vm.engine.camera.rotation)
             }
             paint.xfermode = null
             canvas.restoreToCount(save)
@@ -146,18 +163,26 @@ class CanvasRenderer {
         val b = FloatArray(4)
         if (!vm.selectionBounds(b)) return
         val ox = vm.previewDx.toDouble(); val oy = vm.previewDy.toDouble()
-        val l = ((b[0] + ox - camX) * zoom + w / 2.0).toFloat()
-        val t = ((b[1] + oy - camY) * zoom + h / 2.0).toFloat()
-        val r = ((b[2] + ox - camX) * zoom + w / 2.0).toFloat()
-        val bo = ((b[3] + oy - camY) * zoom + h / 2.0).toFloat()
-        if (r < 0 || bo < 0 || l > w || t > h) return
+        val rot = vm.engine.camera.rotation
+        val sinR = sin(rot); val cosR = cos(rot)
         paint.style = Paint.Style.STROKE
         paint.maskFilter = null
         paint.alpha = 255
         paint.strokeWidth = 2f
         paint.color = 0xFF2196F3.toInt()
         paint.pathEffect = dashEffect
-        canvas.drawRect(l, t, r, bo, paint)
+        // Step 24: the bounds rect rotates with the world — draw its 4 corners.
+        path.rewind()
+        worldToScreen(b[0] + ox, b[1] + oy, camX, camY, zoom, sinR, cosR, w, h, wsOut)
+        path.moveTo(wsOut[0], wsOut[1])
+        worldToScreen(b[2] + ox, b[1] + oy, camX, camY, zoom, sinR, cosR, w, h, wsOut)
+        path.lineTo(wsOut[0], wsOut[1])
+        worldToScreen(b[2] + ox, b[3] + oy, camX, camY, zoom, sinR, cosR, w, h, wsOut)
+        path.lineTo(wsOut[0], wsOut[1])
+        worldToScreen(b[0] + ox, b[3] + oy, camX, camY, zoom, sinR, cosR, w, h, wsOut)
+        path.lineTo(wsOut[0], wsOut[1])
+        path.close()
+        canvas.drawPath(path, paint)
         paint.pathEffect = null
     }
 
@@ -165,6 +190,9 @@ class CanvasRenderer {
     private fun drawRasterTiles(canvas: Canvas, vm: DrawingViewModel, level: ZoomLevel, camX: Double, camY: Double,
                                 zoom: Double, w: Int, h: Int, layerId: Long, layerAlpha: Int) {
         val rt = com.example.infinitedraw.render.RasterTiles
+        val rot = vm.engine.camera.rotation
+        val sinR = sin(rot); val cosR = cos(rot)
+        val tileR = rt.TILE * 0.7072 * zoom   // half-diagonal in px (Step 24 circle culling)
         for (t in rt.tilesSnapshot()) {
             if (t.key.levelId != level.id || t.key.layerId != layerId) continue
             // tile rect in level-local coords
@@ -172,22 +200,27 @@ class CanvasRenderer {
             val y0 = t.key.ty * rt.TILE.toDouble()
             val x1 = x0 + rt.TILE
             val y1 = y0 + rt.TILE
-            val sx0 = ((x0 - camX) * zoom + w / 2.0)
-            val sy0 = ((y0 - camY) * zoom + h / 2.0)
-            val sx1 = ((x1 - camX) * zoom + w / 2.0)
-            val sy1 = ((y1 - camY) * zoom + h / 2.0)
-            if (sx1 < 0 || sy1 < 0 || sx0 > w || sy0 > h) continue   // cull
+            // Step 24: circle cull (rect culls are wrong under rotation).
+            worldToScreen((x0 + x1) / 2, (y0 + y1) / 2, camX, camY, zoom, sinR, cosR, w, h, wsOut)
+            if (wsOut[0] + tileR < 0 || wsOut[0] - tileR > w || wsOut[1] + tileR < 0 || wsOut[1] - tileR > h) continue
             rt.touch(t)
             // Evicted tiles: reload their PNG from disk when scrolled back into view.
             if (t.bitmap.isRecycled()) {
                 rt.loadTile(vm.getApplication<android.app.Application>(), vm.project.name, t.key)
             }
             if (!t.bitmap.isRecycled()) {
-                val dst = android.graphics.RectF(sx0.toFloat(), sy0.toFloat(), sx1.toFloat(), sy1.toFloat())
+                val sx0 = ((x0 - camX) * zoom + w / 2.0).toFloat()
+                val sy0 = ((y0 - camY) * zoom + h / 2.0).toFloat()
+                val sx1 = ((x1 - camX) * zoom + w / 2.0).toFloat()
+                val sy1 = ((y1 - camY) * zoom + h / 2.0).toFloat()
+                val dst = android.graphics.RectF(sx0, sy0, sx1, sy1)
                 paint.alpha = layerAlpha
                 paint.style = Paint.Style.FILL
                 paint.isFilterBitmap = true
+                val save = canvas.save()
+                canvas.rotate(Math.toDegrees(rot).toFloat(), (sx0 + sx1) / 2f, (sy0 + sy1) / 2f)
                 canvas.drawBitmap(t.bitmap, null, dst, paint)
+                canvas.restoreToCount(save)
             }
         }
     }
@@ -196,16 +229,24 @@ class CanvasRenderer {
                           camX: Double, camY: Double, zoom: Double, w: Int, h: Int, layerAlpha: Int,
                           offX: Double = 0.0, offY: Double = 0.0) {
         val bmp = vm.bitmaps[img.id] ?: return
+        val rot = vm.engine.camera.rotation
+        val sinR = sin(rot); val cosR = cos(rot)
+        // Step 24: circle cull, then canvas.rotate about the image's screen center.
+        worldToScreen(img.x + img.w / 2.0 + offX, img.y + img.h / 2.0 + offY, camX, camY, zoom, sinR, cosR, w, h, wsOut)
+        val rPix = hypot(img.w.toDouble(), img.h.toDouble()) / 2.0 * zoom
+        if (wsOut[0] + rPix < 0 || wsOut[0] - rPix > w || wsOut[1] + rPix < 0 || wsOut[1] - rPix > h) return
         val l = ((img.x + offX - camX) * zoom + w / 2f).toFloat()
         val t = ((img.y + offY - camY) * zoom + h / 2f).toFloat()
         val r = ((img.x + offX + img.w - camX) * zoom + w / 2f).toFloat()
         val b = ((img.y + offY + img.h - camY) * zoom + h / 2f).toFloat()
-        if (r < 0 || b < 0 || l > w || t > h) return
         val dst = android.graphics.RectF(l, t, r, b)
         paint.alpha = layerAlpha
         paint.style = Paint.Style.FILL
         paint.isAntiAlias = true
+        val save = canvas.save()
+        canvas.rotate(Math.toDegrees(rot).toFloat(), (l + r) / 2f, (t + b) / 2f)
         canvas.drawBitmap(bmp, null, dst, paint)
+        canvas.restoreToCount(save)
         paint.alpha = 255
     }
 
@@ -235,36 +276,40 @@ class CanvasRenderer {
                     vm.tool == com.example.infinitedraw.ui.Tool.PENCIL ||
                     vm.tool == com.example.infinitedraw.ui.Tool.CHARCOAL), a.toList()
             )
-            drawStroke(canvas, temp, cam.cx, cam.cy, cam.zoom, w, h, paint, path)
+            drawStroke(canvas, temp, cam.cx, cam.cy, cam.zoom, w, h, paint, path, 0.0, 0.0, cam.rotation)
         }
     }
 
-    private fun cull(s: Stroke, camX: Float, camY: Float, zoom: Float, w: Int, h: Int,
-                     offX: Double = 0.0, offY: Double = 0.0): Boolean {
-        val b = s.bounds
-        val l = ((b[0] + offX - camX) * zoom + w / 2f)
-        val t = ((b[1] + offY - camY) * zoom + h / 2f)
-        val r = ((b[2] + offX - camX) * zoom + w / 2f)
-        val bo = ((b[3] + offY - camY) * zoom + h / 2f)
-        return r < 0 || bo < 0 || l > w || t > h
+    /** Step 24: shared world -> screen transform — the inverse of engine.screenToLocal. Fills out = [sx, sy]. */
+    private fun worldToScreen(lx: Double, ly: Double, camX: Double, camY: Double, zoom: Double,
+                               sinR: Double, cosR: Double, w: Int, h: Int, out: FloatArray) {
+        val px = (lx - camX) * zoom
+        val py = (ly - camY) * zoom
+        out[0] = (w / 2.0 + cosR * px - sinR * py).toFloat()
+        out[1] = (h / 2.0 + sinR * px + cosR * py).toFloat()
     }
 
     fun drawStroke(canvas: Canvas, s: Stroke, camX: Double, camY: Double, zoom: Double,
-                   w: Int, h: Int, paint: Paint, path: Path, offX: Double = 0.0, offY: Double = 0.0) {
+                   w: Int, h: Int, paint: Paint, path: Path, offX: Double = 0.0, offY: Double = 0.0,
+                   rotation: Double = 0.0) {
         val pts = s.points
         val n = pts.size
         if (n == 0) return
+        val sinR = sin(rotation); val cosR = cos(rotation)
         val b = s.bounds
-        val x0 = (b[0] + offX - camX) * zoom + w / 2.0; val x1 = (b[2] + offX - camX) * zoom + w / 2.0
-        val y0 = (b[1] + offY - camY) * zoom + h / 2.0; val y1 = (b[3] + offY - camY) * zoom + h / 2.0
-        // Pencil/charcoal dabs jitter up to ~0.5 radius outside the padded bounds.
-        val pad = if (s.brush == BrushType.PENCIL || s.brush == BrushType.CHARCOAL) 0.6 * s.width * zoom else 0.0
-        if (x1 + pad < 0 || x0 - pad > w || y1 + pad < 0 || y0 - pad > h) return   // cull
+        // Step 24: circle cull — project the bounds center and cull by its
+        // half-diagonal circle (rect culls are wrong under rotation).
+        // Pencil/charcoal dabs jitter ~0.5 radius past the padded bounds, so pad them.
+        worldToScreen((b[0] + b[2]) / 2.0 + offX, (b[1] + b[3]) / 2.0 + offY, camX, camY, zoom, sinR, cosR, w, h, wsOut)
+        var rPix = hypot((b[2] - b[0]).toDouble(), (b[3] - b[1]).toDouble()) / 2.0 * zoom
+        if (s.brush == BrushType.PENCIL || s.brush == BrushType.CHARCOAL) rPix += 0.6 * s.width * zoom
+        if (wsOut[0] + rPix < 0 || wsOut[0] - rPix > w || wsOut[1] + rPix < 0 || wsOut[1] - rPix > h) return   // cull
 
         val xs = FloatArray(n); val ys = FloatArray(n); val rs = FloatArray(n)
         for (i in 0 until n) {
-            xs[i] = ((pts[i].x + offX - camX) * zoom + w / 2.0).coerceIn(-100000.0, 100000.0).toFloat()
-            ys[i] = ((pts[i].y + offY - camY) * zoom + h / 2.0).coerceIn(-100000.0, 100000.0).toFloat()
+            worldToScreen(pts[i].x + offX, pts[i].y + offY, camX, camY, zoom, sinR, cosR, w, h, wsOut)
+            xs[i] = wsOut[0].coerceIn(-100000f, 100000f)
+            ys[i] = wsOut[1].coerceIn(-100000f, 100000f)
             val pf = if (s.usePressure) 0.15 + 0.85 * pts[i].p else 1.0
             rs[i] = (0.5 * s.width * zoom * pf).toFloat()
         }
@@ -276,7 +321,7 @@ class CanvasRenderer {
         when (s.brush) {
             BrushType.PENCIL, BrushType.CHARCOAL -> {
                 // Step 22: grainy dab stamping instead of a filled ribbon.
-                drawDabs(canvas, s, camX, camY, zoom, w, h, paint)
+                drawDabs(canvas, s, camX, camY, zoom, w, h, paint, rotation)
                 return
             }
             BrushType.MARKER -> {
@@ -323,10 +368,11 @@ class CanvasRenderer {
      * a pure function, no Random, no image assets. Capped at 3000 dabs per stroke.
      */
     private fun drawDabs(canvas: Canvas, s: Stroke, camX: Double, camY: Double, zoom: Double,
-                         w: Int, h: Int, paint: Paint) {
+                         w: Int, h: Int, paint: Paint, rotation: Double) {
         val pts = s.points
         val n = pts.size
         if (n == 0 || s.width <= 0f) return
+        val sinR = sin(rotation); val cosR = cos(rotation)
         val pencil = s.brush == BrushType.PENCIL
         // Brush character, first-pass values (tune on device):
         val sizeLo = if (pencil) 0.55f else 0.45f    // dab radius as fraction of local radius
@@ -353,8 +399,11 @@ class CanvasRenderer {
             val f4 = ((hv ushr 24) and 0xFF) / 255f
             dab++   // offscreen dabs still burn an index -> the grain cannot shift while panning
             val dr = r * (sizeLo + (sizeHi - sizeLo) * f3)
-            val sx = ((lx + (f1 * 2f - 1f) * jitter * r - camX) * zoom + w / 2.0).toFloat()
-            val sy = ((ly + (f2 * 2f - 1f) * jitter * r - camY) * zoom + h / 2.0).toFloat()
+            // Step 24: jitter in world space, then one shared transform to screen.
+            worldToScreen((lx + (f1 * 2f - 1f) * jitter * r).toDouble(), (ly + (f2 * 2f - 1f) * jitter * r).toDouble(),
+                camX, camY, zoom, sinR, cosR, w, h, wsOut)
+            val sx = wsOut[0]
+            val sy = wsOut[1]
             val sr = (dr * zoom).toFloat()
             if (sx + sr < 0f || sx - sr > w || sy + sr < 0f || sy - sr > h) return
             val a = ((alphaLo + (alphaHi - alphaLo) * f4) * baseA).toInt().coerceIn(0, 255)

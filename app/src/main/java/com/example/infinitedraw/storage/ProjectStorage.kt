@@ -28,7 +28,8 @@ class LevelDto(
 )
 
 @Serializable
-class CameraDto(val levelId: Int, val cx: Double, val cy: Double, val zoom: Double)
+class CameraDto(val levelId: Int, val cx: Double, val cy: Double, val zoom: Double,
+                 val rotation: Double = 0.0)   // Step 24; default keeps old saves loading
 
 @Serializable
 class ProjectDto(
@@ -66,7 +67,7 @@ object ProjectStorage {
         return ProjectDto(
             name = p.name, layers = p.layers.toList(), paper = p.paper,
             levels = dtos,
-            camera = CameraDto(c.level.id, c.cx, c.cy, c.zoom),
+            camera = CameraDto(c.level.id, c.cx, c.cy, c.zoom, c.rotation),
             nextLevelId = e.nextLevelId, nextStrokeId = e.nextStrokeId
         )
     }
@@ -115,6 +116,7 @@ object ProjectStorage {
         e.camera.cx = dto.camera.cx
         e.camera.cy = dto.camera.cy
         e.camera.zoom = dto.camera.zoom
+        e.camera.rotation = dto.camera.rotation   // Step 24
     }
 
     fun deserialize(text: String, p: Project, e: InfiniteZoomEngine) = apply(json.decodeFromString(ProjectDto.serializer(), text), p, e)

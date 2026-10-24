@@ -97,6 +97,46 @@ simplest option, log it in DECISIONS.md, continue").
   images/, tiles/) after an autosave.flushNow, so the archive matches the
   on-screen state.
 
+## Step 24 - Rotation (2026-10-23)
+
+- The step spec said "per given formulas", but no formulas were ever recorded
+  in the repo (PLAN.md ends at Step 18). They were re-derived from first
+  principles and are captured in code comments + RotationTest:
+  world -> screen: [sx, sy] = center + R(theta) * (world - camera) * zoom,
+  with R(theta) = [[cos, -sin], [sin, cos]]; screenToLocal applies R(-theta).
+- zoomAt became a thin wrapper over the new transformAt(factor, delta, sx, sy)
+  so pinch and twist land in ONE anchored operation (the world point under the
+  anchor stays fixed for both at once). All existing zoomAt call sites still
+  work unchanged.
+- transformAt wraps rotation to [-pi, pi) after every step, so endless twist
+  streams never lose floating-point precision.
+- Twist gesture: the angle between the two fingers (atan2), delta-wrapped to
+  [-pi, pi], applied with the pinch factor, anchored at the finger midpoint.
+  A single finger never rotates. The engine call is skipped when factor == 1
+  and delta == 0 to avoid churn on plain two-finger pans.
+- Culling: rect culls are geometrically wrong under rotation. Everything now
+  circle-culls: project the bounds center via worldToScreen and compare against
+  a radius = half-diagonal * zoom (strokes keep the pencil/charcoal jitter
+  pad; images and raster tiles use their own half-diagonals). The separate
+  drawLevelContent pre-cull was removed — drawStroke already culls once.
+- Paper grid: canvas.rotate(deg(theta)) about the screen center, then the
+  ORIGINAL unrotated grid formulas, with line/dot ranges extended by the screen
+  diagonal so the rotated grid still covers the viewport corners. The grid
+  stays anchored to world x=0 / y=0 and rotates with the camera.
+- Images and raster tiles: canvas.rotate about the item's own screen center,
+  drawn in the unrotated dst rect (per the step spec: "canvas.rotate").
+- Selection outline: a dashed quad through the 4 rotated bounds corners
+  (bounds rect no longer maps to a screen rect). Its per-level cull was
+  dropped — a single path is negligible.
+- Step 21's move preview (previewDx/Dy) is now derived from two
+  screenToLocal calls instead of (screen delta)/zoom, so dragging a selection
+  under rotation moves it in the direction the pen travels.
+- Fling momentum works rotated with no change: panBy applies R(-theta), and
+  the fling loop only calls panBy.
+- CameraDto gained `rotation` with default 0.0: old project.json files load
+  unrotated; new saves round-trip rotation. Camera-descend/ascend is
+  unaffected (child frames are axis-aligned, so one theta serves all levels).
+
 ## Known limitations (carried over from PLAN.md)
 
 - Strokes with screen coordinates beyond ±100000 are clamped, so huge strokes

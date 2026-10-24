@@ -17,6 +17,7 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
     private var stylusDown = false
     private var lastCount = -1
     private var lastMx = 0f; private var lastMy = 0f; private var lastDist = 0f
+    private var lastAngle = 0.0                  // Step 24: two-finger twist angle
     private var lastWasOneFingerPan = false   // true only when the last navigate was a 1-finger pan
 
     // ---- Step 19: swipe momentum (fling) ----
@@ -47,7 +48,7 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
     }
     private fun startNavigate(e: MotionEvent) {
         stopFling()                               // any touch down cancels the fling at once
-        mode = Mode.NAVIGATE; lastCount = -1
+        mode = Mode.NAVIGATE; lastCount = -1; lastAngle = 0.0
         tracker?.recycle()
         tracker = VelocityTracker.obtain()
         tracker?.addMovement(e)
@@ -112,13 +113,22 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
         for (i in 0 until n) { mx += e.getX(i); my += e.getY(i) }
         mx /= n; my /= n
         val dist = if (n >= 2) hypot(e.getX(0) - e.getX(1), e.getY(0) - e.getY(1)) else 0f
+        // Step 24: two-finger twist — the angle between the fingers rotates the world.
+        val angle = if (n >= 2)
+            kotlin.math.atan2((e.getY(1) - e.getY(0)).toDouble(), (e.getX(1) - e.getX(0)).toDouble()) else 0.0
         if (n == lastCount) {
             vm.engine.panBy(mx - lastMx, my - lastMy)
-            if (n >= 2 && lastDist > 0f)
-                vm.engine.zoomAt((dist / lastDist).toDouble().coerceIn(0.5, 2.0), mx, my, width, height)
+            if (n >= 2 && lastDist > 0f) {
+                val factor = (dist / lastDist).toDouble().coerceIn(0.5, 2.0)
+                var dth = angle - lastAngle
+                while (dth > Math.PI) dth -= 2 * Math.PI
+                while (dth < -Math.PI) dth += 2 * Math.PI
+                if (factor != 1.0 || dth != 0.0)
+                    vm.engine.transformAt(factor, dth, mx, my, width, height)
+            }
         }
         lastWasOneFingerPan = n == 1 && lastCount == 1   // momentum only after a pure 1-finger pan
-        lastCount = n; lastMx = mx; lastMy = my; lastDist = dist
+        lastCount = n; lastMx = mx; lastMy = my; lastDist = dist; lastAngle = angle
     }
 
     // ---- Step 19: fling helpers ----
