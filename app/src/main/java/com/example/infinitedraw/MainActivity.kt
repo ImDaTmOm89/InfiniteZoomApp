@@ -7,6 +7,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -52,8 +54,9 @@ enum class PanelType { COLOR, BRUSH, LAYERS, PAPER, SELECTION }
 fun toolbarButton(label: String, onClick: () -> Unit) {
     Text(
         label,
+        style = MaterialTheme.typography.labelLarge,   // Bug #1 fix: compact buttons fit any window
         modifier = Modifier
-            .padding(4.dp)
+            .padding(2.dp)
             .clickable(onClick = onClick)
     )
 }
@@ -139,7 +142,8 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
         Column(
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(start = 12.dp, top = 96.dp),
+                .padding(start = 12.dp, top = 96.dp)
+                .verticalScroll(rememberScrollState()),   // Bug #1 fix: all buttons reachable in short windows
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             toolbarButton("Undo") { vm.undo() }
@@ -196,10 +200,10 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
             }
         }
 
-        // Left strip: size slider
+        // Left strip: size slider (bottom-start — Bug #1 fix: can never overlap the toolbar)
         Column(
             Modifier
-                .align(Alignment.CenterStart)
+                .align(Alignment.BottomStart)
                 .padding(8.dp)
         ) {
             Text("Size")
