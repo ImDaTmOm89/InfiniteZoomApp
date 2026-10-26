@@ -84,7 +84,7 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
     val context = LocalContext.current
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
-            vm.addImage(uri, viewW, viewH) { error ->
+            vm.addImage(uri, vm.viewW.takeIf { it > 0 } ?: 1440, vm.viewH.takeIf { it > 0 } ?: 2304) { error ->
                 android.widget.Toast.makeText(context,
                     error ?: "Image imported",
                     android.widget.Toast.LENGTH_LONG).show()
@@ -116,6 +116,7 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
     LaunchedEffect(Unit) {
         val last = ProjectStorage.lastProjectName(context)
         if (last != null) ProjectStorage.load(context, last, vm.project, vm.engine, vm.bitmaps)
+        vm.activeLayerId = vm.project.activeLayerId   // testing fix: restore the active layer
         vm.redraw?.invoke()
     }
     // Step 21: the Selection panel follows the selection (opens on pick, closes on deselect).
@@ -165,10 +166,12 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
             }
             toolbarButton("Reset View") {
                 vm.engine.camera.zoom = 1.0; vm.engine.camera.cx = 0.0; vm.engine.camera.cy = 0.0
+                vm.autosave.schedule()   // testing fix: camera changes must survive force-stop
                 vm.redraw?.invoke()
             }
             toolbarButton("Reset Rotation") {
                 vm.engine.camera.rotation = 0.0
+                vm.autosave.schedule()   // testing fix
                 vm.redraw?.invoke()
             }
             // Step 21: Select tool — tap picks, drag inside the dashed box moves.
@@ -186,7 +189,7 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
                 imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
             }
             toolbarButton("Export PNG") {
-                vm.exportPng(viewW, viewH) { path ->
+                vm.exportPng(vm.viewW.takeIf { it > 0 } ?: 1440, vm.viewH.takeIf { it > 0 } ?: 2304) { path ->
                     android.widget.Toast.makeText(context,
                         if (path != null) "Saved: $path" else "Export failed",
                         android.widget.Toast.LENGTH_SHORT).show()

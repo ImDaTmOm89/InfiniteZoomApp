@@ -19,6 +19,7 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
     private var lastMx = 0f; private var lastMy = 0f; private var lastDist = 0f
     private var lastAngle = 0.0                  // Step 24: two-finger twist angle
     private var lastWasOneFingerPan = false   // true only when the last navigate was a 1-finger pan
+    private var navDirty = false              // testing fix: camera moved, needs an autosave on gesture end
 
     // ---- Step 19: swipe momentum (fling) ----
     private var tracker: VelocityTracker? = null
@@ -27,6 +28,10 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
     private var flingLastNs = 0L
 
     init { vm.redraw = { postInvalidate() } }
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        vm.viewW = w; vm.viewH = h   // testing fix: reliable size for export/import placement
+    }
     override fun onDraw(canvas: Canvas) { renderer.render(canvas, vm, width, height) }
 
     private fun isStylus(e: MotionEvent, i: Int) =
@@ -91,6 +96,7 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
             MotionEvent.ACTION_UP -> {
                 if (mode == Mode.DRAW) vm.endStroke()
                 else if (mode == Mode.NAVIGATE && lastWasOneFingerPan) startFling()
+                saveCameraIfDirty()
                 cleanupTracker()
                 stylusDown = false; mode = Mode.NONE
             }
@@ -99,6 +105,7 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
                 // stylus lifts instead of ACTION_UP. If a stroke is in progress, commit it
                 // rather than discarding it — otherwise drawings vanish on lift.
                 if (mode == Mode.DRAW) vm.endStroke()
+                saveCameraIfDirty()
                 cleanupTracker()
                 stylusDown = false; mode = Mode.NONE
             }
@@ -118,6 +125,7 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
             kotlin.math.atan2((e.getY(1) - e.getY(0)).toDouble(), (e.getX(1) - e.getX(0)).toDouble()) else 0.0
         if (n == lastCount) {
             vm.engine.panBy(mx - lastMx, my - lastMy)
+            navDirty = true
             if (n >= 2 && lastDist > 0f) {
                 val factor = (dist / lastDist).toDouble().coerceIn(0.5, 2.0)
                 var dth = angle - lastAngle
@@ -129,6 +137,11 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
         }
         lastWasOneFingerPan = n == 1 && lastCount == 1   // momentum only after a pure 1-finger pan
         lastCount = n; lastMx = mx; lastMy = my; lastDist = dist; lastAngle = angle
+    }
+
+    /** Testing fix: persist camera moves (plan Step 18: force-stop + reopen must be identical). */
+    private fun saveCameraIfDirty() {
+        if (navDirty) { navDirty = false; vm.autosave.schedule() }
     }
 
     // ---- Step 19: fling helpers ----
@@ -147,6 +160,7 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
                 val dt = ((now - flingLastNs) / 1_000_000_000.0).toFloat()
                 flingLastNs = now
                 vm.engine.panBy(flingVx * dt, flingVy * dt)
+                navDirty = true
                 val decay = 0.92.pow(dt * 60.0).toFloat()
                 flingVx *= decay; flingVy *= decay
                 invalidate()
@@ -161,6 +175,7 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
     private fun stopFling() {
         flingRunnable?.let { removeCallbacks(it) }
         flingRunnable = null
+        saveCameraIfDirty()   // testing fix: fling moved the camera; persist it
     }
 
     private fun cleanupTracker() {

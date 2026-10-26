@@ -1,8 +1,62 @@
 # PROGRESS.md
 
-Last updated: 2026-10-23 (Step 24 done — all planned steps implemented)
+Last updated: 2026-10-26 (on-device test session complete — 10 bugs found & fixed)
 
 ## Finished steps
+- On-device test session — 2026-10-26 — **ALL 12 TEST GROUPS PASS after 10 bug fixes**
+  Device: Samsung Galaxy Tab S9 FE (SM-X510, Android 16, 1440x2304), driven via adb
+  (install, taps/swipes, uiautomator dumps, screenshots + pixel diffs, logcat crash
+  buffer, run-as file access). Verified: cold launch (818ms, zero crashes), project
+  persistence/restore, pan + fling momentum, finger-draws guard, undo/redo, all 6
+  brushes, color picker end-to-end (HSV->stroke RGB match), stabilizer/gamma
+  persisted to SharedPreferences, layer system (add/hide/lock/toast-guard/opacity/
+  blend/delete+undo/rename), select tool (pick, dashed outline, move, scale,
+  delete, undo/redo byte-exact restore, deselect), raster tools (oil/mix/smudge/
+  erase + raster undo/redo), PNG export (99.998% screen match), .uzw export
+  (project.json + images + tiles), .uzw import + " (2)" dedup + project switch +
+  pref update, force-stop persistence (camera / active layer / layer props / tiles).
+  Stylus, pinch-zoom, twist rotation and palm rejection remain manual-only (adb
+  cannot inject two pointers or a stylus); rotation was incidentally confirmed
+  working (overlay rot=-15 with coherent rendering after an on-device twist).
+
+  Bugs found and FIXED during testing (each fix verified on-device after rebuild):
+  1. Toolbar overflowed short/windowed layouts (buttons off-screen, slider
+     overlap) -> compact scrollable toolbar + Size slider to bottom-start (9f4490a).
+  2. addImage could place a degenerate 0x0 image (view measured 0 in Samsung
+     pop-up windows) -> guarded + sane fallback sizes.
+  3. Airbrush deviated from plan Step 8 (0.35 blur / 80% alpha) -> restored
+     0.6 width blur + 50% alpha + <=300px guard.
+  4. LayersPanel: lock toggle + rename missing; eye/opacity/blend edits bypassed
+     commands (not undoable); panel never recomposed (no Compose state) ->
+     lock/rename added, all edits via SetLayerProps, layersVersion reactive key,
+     reactive activeLayerId, ignored-drawing Toast implemented (plan Step 10).
+  5. Layer opacity/blend never rendered for vector strokes (Step 10's saveLayer
+     was never implemented; only tiles/images got the alpha) -> saveLayer wrap
+     when opacity < 1 or blend != NORMAL with BlendMode-mapped layer paint.
+  6. Active layer, camera moves and layer edits did not survive force-stop (no
+     autosave on them) -> Project.activeLayerId persisted in ProjectDto, view
+     gestures/Reset buttons schedule autosave, every layer edit bumps + saves.
+  7. CRITICAL: raster dab/erase/snapshot passed x0 as the getPixels/setPixels
+     OFFSET argument -> ArrayIndexOutOfBoundsException on any dab not touching the
+     tile's left edge; Oil/Mix/Smudge/RasterErase crashed the app on the first
+     interior dab. Fixed at all 7 call sites (offset must be 0).
+  8. Export PNG crashed the app: its success Toast fired from the Dispatchers.IO
+     coroutine ("Can't toast on a thread that has not called
+     Looper.prepare()") -> all 4 async callbacks (exportPng/exportUzw/importUzw/
+     addImage) hop to Dispatchers.Main before invoking onDone.
+  9. Export PNG sized its bitmap from Compose's AndroidView.update, which fires
+     pre-layout with 0 and may never re-run -> createBitmap(0,0) IAE. DrawingView
+     now reports real size via onSizeChanged into the ViewModel.
+  10. CRITICAL: loaded tile PNGs are immutable -> Canvas.setBitmap threw a
+     messageless IllegalStateException inside load(); load() returned false AFTER
+     deserialize() (partial load: strokes/camera restored, tiles+images silently
+     skipped) and a later save could overwrite the real project with the default
+     empty one. Fixed: decode -> copy(ARGB_8888, mutable) in loadTiles AND the
+     renderer's evicted-tile loadTile; per-tile try/catch; tiles/images load
+     failures are non-fatal. Tiles now survive restart (oil band ink 170 -> 7306
+     px after reload) and the .uzw import works (it previously failed on load).
+  JVM tests after all fixes: 15/15 pass. Final session: zero load failures,
+  zero new crashes.
 - Step 24 — Rotation — 2026-10-23 — **DONE, awaiting on-device verification** (last planned step)
   The spec's "given formulas" were never recorded in the repo, so the transforms
   were re-derived from first principles and logged in DECISIONS.md: screen =

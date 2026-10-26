@@ -17,9 +17,11 @@ import com.example.infinitedraw.engine.RasterCommand
 import com.example.infinitedraw.engine.RemoveImage
 import com.example.infinitedraw.engine.RemoveStrokes
 import com.example.infinitedraw.engine.ScaleSelection
+import com.example.infinitedraw.engine.SetLayerProps
 import com.example.infinitedraw.engine.UndoStack
 import com.example.infinitedraw.model.BrushType
 import com.example.infinitedraw.model.Layer
+import com.example.infinitedraw.model.LayerBlend
 import com.example.infinitedraw.model.Project
 import com.example.infinitedraw.model.Stroke
 import com.example.infinitedraw.model.StrokePoint
@@ -44,13 +46,25 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     val autosave = Autosave(app, project, engine)
     var fingerDraws = false
     var redraw: (() -> Unit)? = null
+    // Testing fix: real view size, set by DrawingView.onSizeChanged. Compose's
+    // AndroidView.update fires pre-layout with 0 and may never re-run.
+    var viewW = 0
+    var viewH = 0
 
     var brushType = BrushType.PEN
     var brushSizePx = 6f
     var color: Int = android.graphics.Color.BLACK
     val recentColors = mutableListOf<Int>()
-    var activeLayerId = 1L
-        set(value) { field = value; redraw?.invoke() }
+    // Testing fix: reactive so the Layers panel recomposes on selection change.
+    private var _activeLayerId by mutableStateOf(1L)
+    var activeLayerId: Long
+        get() = _activeLayerId
+        set(value) { _activeLayerId = value; project.activeLayerId = value; autosave.schedule(); redraw?.invoke() }
+
+    /** Testing fix: bumped on every layer edit; LayersPanel keys on it to recompose. */
+    var layersVersion by mutableStateOf(0)
+        private set
+    private fun bumpLayers() { layersVersion++; autosave.schedule() }   // also persists across force-stops
     var usePressure = true
 
     // ---- Step 20: stroke smoothing + pressure curve (persisted in SharedPreferences("settings")) ----
@@ -262,6 +276,13 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         // Plan Step 10: the active layer must be visible and unlocked to draw.
         val layer = activeLayer()
         if (layer == null || !layer.visible || layer.locked) {
+            // Step 10 rule (implemented during testing): say WHY drawing is ignored.
+            if (layer != null) {
+                guardToast?.cancel()
+                guardToast = android.widget.Toast.makeText(getApplication(),
+                    "Layer '${layer.name}' is hidden or locked", android.widget.Toast.LENGTH_SHORT)
+                guardToast?.show()
+            }
             active = null
             return
         }
@@ -465,17 +486,27 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
                     errorMsg = "Could not decode the image. The file may be corrupt or in an unsupported format."
                     return@launch
                 }
+                // Bug #2 fix: a view can measure 0 in odd window states (Samsung
+                // pop-up windows); fall back to sane defaults and never place a
+                // degenerate 0x0 image.
+                val vw = if (w > 0) w else 1080
+                val vh = if (h > 0) h else 1920
+                val cam = engine.camera
+                val aspect = if (bmp.height > 0) bmp.width.toDouble() / bmp.height else 1.0
+                val imgW = vw * 0.5 / cam.zoom
+                val imgH = imgW / aspect
+                if (imgW <= 0.0 || imgH <= 0.0 || imgW.isNaN() || imgH.isNaN() || imgW.isInfinite() || imgH.isInfinite()) {
+                    bmp.recycle()
+                    errorMsg = "Could not place the image (invalid size)."
+                    return@launch
+                }
                 val imgId = nextImageId++
                 val dir = java.io.File(ctx.filesDir, "projects/${project.name}/images").apply { mkdirs() }
                 java.io.File(dir, "$imgId.png").outputStream().use {
                     bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
                 }
-                    bitmaps[imgId] = bmp
-                val cam = engine.camera
-                val aspect = if (bmp.height > 0) bmp.width.toDouble() / bmp.height else 1.0
-                val imgW = w * 0.5 / cam.zoom
-                val imgH = imgW / aspect
-                val l = engine.screenToLocal(w / 2f, h / 2f, w, h)
+                bitmaps[imgId] = bmp
+                val l = engine.screenToLocal(vw / 2f, vh / 2f, vw, vh)
                 val img = com.example.infinitedraw.model.PlacedImage(
                     imgId, activeLayerId, "$imgId.png",
                     (l[0] - imgW / 2).toFloat(), (l[1] - imgH / 2).toFloat(),
@@ -487,7 +518,8 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
                 android.util.Log.e("DrawingViewModel", "addImage failed", t)
                 errorMsg = "Image import failed: ${t.message ?: t.javaClass.simpleName}"
             }
-            onDone(errorMsg)
+            // Bug fix: toasts need the main thread — hop before the callback.
+            withContext(Dispatchers.Main) { onDone(errorMsg) }
         }
     }
 
@@ -498,6 +530,7 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         val layer = Layer(nextLayerId++, "Layer ${project.layers.size + 1}")
         commands.exec(AddLayer(layer, project.layers.size), engine, project)
         activeLayerId = layer.id
+        bumpLayers()
     }
 
     fun removeLayer(id: Long) {
@@ -506,18 +539,76 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         val removedStrokes = engine.levels.values.associate { it.id to it.strokes.filter { s -> s.layerId == layer.id } }
         commands.exec(DeleteLayer(layer, project.layers.indexOf(layer), removedStrokes), engine, project)
         if (activeLayerId == id) activeLayerId = project.layers.last().id
+        bumpLayers()
     }
+
+    // ---- Layer editing (Step 13 fix: every edit goes through SetLayerProps => undoable) ----
+
+    private fun propsOf(l: Layer) = SetLayerProps.Props(l.name, l.visible, l.locked, l.opacity, l.blend)
+
+    private var guardToast: android.widget.Toast? = null
 
     fun toggleLayerVisible(id: Long) {
         val l = project.layers.firstOrNull { it.id == id } ?: return
+        val old = propsOf(l)
         l.visible = !l.visible
-        redraw?.invoke()
+        commands.exec(SetLayerProps(id, old, propsOf(l)), engine, project)
+        bumpLayers(); redraw?.invoke()
     }
+
+    /** Step 13 (was missing from the panel UI): lock toggle, undoable. */
+    fun toggleLayerLocked(id: Long) {
+        val l = project.layers.firstOrNull { it.id == id } ?: return
+        val old = propsOf(l)
+        l.locked = !l.locked
+        commands.exec(SetLayerProps(id, old, propsOf(l)), engine, project)
+        bumpLayers(); redraw?.invoke()
+    }
+
+    fun setLayerBlend(id: Long, blend: LayerBlend) {
+        val l = project.layers.firstOrNull { it.id == id } ?: return
+        if (l.blend == blend) return
+        val old = propsOf(l)
+        l.blend = blend
+        commands.exec(SetLayerProps(id, old, propsOf(l)), engine, project)
+        bumpLayers(); redraw?.invoke()
+    }
+
+    // Opacity: live preview while the slider drags, ONE SetLayerProps on release.
+    private var opacityDragLayer = -1L
+    private var opacityDragStart: SetLayerProps.Props? = null
 
     fun setLayerOpacity(id: Long, opacity: Float) {
         val l = project.layers.firstOrNull { it.id == id } ?: return
+        if (opacityDragLayer != id) {
+            commitLayerOpacity()   // close any forgotten drag
+            opacityDragLayer = id
+            opacityDragStart = propsOf(l)
+        }
         l.opacity = opacity.coerceIn(0f, 1f)
-        redraw?.invoke()
+        bumpLayers(); redraw?.invoke()
+    }
+
+    fun commitLayerOpacity() {
+        val id = opacityDragLayer
+        val start = opacityDragStart
+        opacityDragLayer = -1L; opacityDragStart = null
+        if (start == null) return
+        val l = project.layers.firstOrNull { it.id == id } ?: return
+        if (l.opacity != start.opacity)
+            commands.exec(SetLayerProps(id, start, propsOf(l)), engine, project)
+        bumpLayers()
+    }
+
+    /** Step 13 long-press rename, undoable. */
+    fun renameLayer(id: Long, newName: String) {
+        val l = project.layers.firstOrNull { it.id == id } ?: return
+        val name = newName.trim().ifBlank { l.name }
+        if (name == l.name) return
+        val old = propsOf(l)
+        l.name = name
+        commands.exec(SetLayerProps(id, old, propsOf(l)), engine, project)
+        bumpLayers(); redraw?.invoke()
     }
 
     fun moveLayer(id: Long, up: Boolean) {
@@ -527,6 +618,7 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         if (target < 0 || target >= project.layers.size) return
         val layer = project.layers[idx]
         commands.exec(MoveLayer(idx, target), engine, project)
+        bumpLayers(); redraw?.invoke()
     }
 
     /** Step 17: export the current view as a PNG into the app's Pictures directory. */
@@ -546,7 +638,8 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
             } catch (t: Throwable) {
                 android.util.Log.e("DrawingViewModel", "exportPng failed", t)
             }
-            onDone(path)
+            // Bug fix: toasts need the main thread — hop before the callback.
+            withContext(Dispatchers.Main) { onDone(path) }
         }
     }
 
@@ -564,7 +657,8 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
                 android.util.Log.e("DrawingViewModel", "exportUzw failed", t)
                 msg = "Export failed: ${t.message ?: t.javaClass.simpleName}"
             }
-            onDone(msg)
+            // Bug fix: toasts need the main thread — hop before the callback.
+            withContext(Dispatchers.Main) { onDone(msg) }
         }
     }
 
@@ -573,13 +667,17 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         val ctx = getApplication<Application>()
         viewModelScope.launch(Dispatchers.IO) {
             val res = ProjectStorage.unzipImport(ctx, uri)
-            if (res.error != null) { onDone(res.error); return@launch }
+            if (res.error != null) {
+                withContext(Dispatchers.Main) { onDone(res.error) }   // bug fix: toast thread
+                return@launch
+            }
             var err: String? = null
             withContext(Dispatchers.Main) {
                 // Switch on the main thread like the startup load: the renderer
                 // reads engine/project from this thread.
                 if (ProjectStorage.load(ctx, res.folder!!, project, engine, bitmaps)) {
                     project.name = res.folder   // apply() restored the DTO name; keep folder <-> name invariant
+                    activeLayerId = project.activeLayerId   // testing fix: restore the active layer
                     commands.clear()            // undo commands referenced the old project
                     selection = null
                     pendingRemoved.clear()
@@ -587,7 +685,7 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
                 } else err = "Import failed: could not load '${res.folder}'"
             }
             if (err == null) autosave.flushNow()   // persist the corrected name + last-project pref
-            onDone(err)
+            withContext(Dispatchers.Main) { onDone(err) }   // bug fix: toast thread
         }
     }
 }

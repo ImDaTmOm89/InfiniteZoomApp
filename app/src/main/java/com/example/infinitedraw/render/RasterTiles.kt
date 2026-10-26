@@ -123,8 +123,11 @@ object RasterTiles {
             com.example.infinitedraw.storage.ProjectStorage.projectDir(ctx, projectName), "tiles")
         val f = java.io.File(dir, "${key.levelId}_${key.layerId}_${key.tx}_${key.ty}.png")
         if (!f.exists()) return null
-        val bmp = android.graphics.BitmapFactory.decodeFile(f.absolutePath) ?: return null
-        if (bmp.width != TILE || bmp.height != TILE) { bmp.recycle(); return null }
+        val decoded = android.graphics.BitmapFactory.decodeFile(f.absolutePath) ?: return null
+        if (decoded.width != TILE || decoded.height != TILE) { decoded.recycle(); return null }
+        // CRITICAL fix: decoded bitmaps are immutable; tiles must be mutable.
+        val bmp = decoded.copy(Bitmap.Config.ARGB_8888, true)
+        decoded.recycle()
         val t = tileFor(key)
         t.canvas.setBitmap(bmp)
         t.bitmap = bmp
@@ -158,7 +161,7 @@ object RasterTiles {
         if (x1 < x0 || y1 < y0) return null
         val w = x1 - x0 + 1; val h = y1 - y0 + 1
         val px = IntArray(w * h)
-        t.bitmap.getPixels(px, x0, w, x0, y0, w, h)
+        t.bitmap.getPixels(px, 0, w, x0, y0, w, h)   // CRITICAL fix: offset 0
         return TileSnapshot(key, cx, cy, r, x0, y0, w, h, px)
     }
 
@@ -218,7 +221,7 @@ object RasterTiles {
         if (x1 < x0 || y1 < y0) return
         val w = x1 - x0 + 1; val h = y1 - y0 + 1
         val px = IntArray(w * h)
-        t.bitmap.getPixels(px, x0, w, x0, y0, w, h)
+        t.bitmap.getPixels(px, 0, w, x0, y0, w, h)   // CRITICAL fix: offset must be 0 (was x0 -> AIOOBE on interior dabs)
         val br = (color shr 16) and 0xFF; val bg = (color shr 8) and 0xFF; val bb = color and 0xFF
         val ba = (color ushr 24) and 0xFF
         for (j in 0 until h) {
@@ -246,7 +249,7 @@ object RasterTiles {
                 px[j * w + i] = (outA shl 24) or (nr shl 16) or (ng shl 8) or nb
             }
         }
-        t.bitmap.setPixels(px, x0, w, x0, y0, w, h)
+        t.bitmap.setPixels(px, 0, w, x0, y0, w, h)   // CRITICAL fix: offset 0
     }
 
     /** Smudge dab: average the color under the brush, then drag it with low alpha. */
@@ -256,7 +259,7 @@ object RasterTiles {
         if (x1 < x0 || y1 < y0) return
         val w = x1 - x0 + 1; val h = y1 - y0 + 1
         val px = IntArray(w * h)
-        t.bitmap.getPixels(px, x0, w, x0, y0, w, h)
+        t.bitmap.getPixels(px, 0, w, x0, y0, w, h)   // CRITICAL fix: offset 0
         // average existing color weighted by alpha (skip fully empty pixels)
         var sr = 0L; var sg = 0L; var sb = 0L; var sw = 0L
         for (v in px) {
@@ -290,7 +293,7 @@ object RasterTiles {
                 px[j * w + i] = (outA shl 24) or (nr shl 16) or (ng shl 8) or nb
             }
         }
-        t.bitmap.setPixels(px, x0, w, x0, y0, w, h)
+        t.bitmap.setPixels(px, 0, w, x0, y0, w, h)   // CRITICAL fix: offset 0
     }
 
     /** Erase raster pixels in a level-local circle (raster eraser, mode 2). */
@@ -310,7 +313,7 @@ object RasterTiles {
                 if (x1 < x0 || y1 < y0) continue
                 val w = x1 - x0 + 1; val h = y1 - y0 + 1
                 val px = IntArray(w * h)
-                t.bitmap.getPixels(px, x0, w, x0, y0, w, h)
+                t.bitmap.getPixels(px, 0, w, x0, y0, w, h)   // CRITICAL fix: offset 0
                 for (j in 0 until h) {
                     val dy = y0 + j + oy - ly
                     for (i in 0 until w) {
@@ -319,7 +322,7 @@ object RasterTiles {
                         if (dist <= r) px[j * w + i] = 0
                     }
                 }
-                t.bitmap.setPixels(px, x0, w, x0, y0, w, h)
+                t.bitmap.setPixels(px, 0, w, x0, y0, w, h)   // CRITICAL fix: offset 0
                 t.dirty = true
             }
         }

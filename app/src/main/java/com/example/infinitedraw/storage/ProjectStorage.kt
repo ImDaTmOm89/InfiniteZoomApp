@@ -35,7 +35,8 @@ class CameraDto(val levelId: Int, val cx: Double, val cy: Double, val zoom: Doub
 class ProjectDto(
     val version: Int = 1, val name: String, val layers: List<Layer>, val paper: Paper,
     val levels: List<LevelDto>, val camera: CameraDto,
-    val nextLevelId: Int, val nextStrokeId: Long
+    val nextLevelId: Int, val nextStrokeId: Long,
+    val activeLayerId: Long = 1L   // testing fix: round-trips the active layer (old saves default)
 )
 
 private val json = Json { ignoreUnknownKeys = true }
@@ -68,7 +69,8 @@ object ProjectStorage {
             name = p.name, layers = p.layers.toList(), paper = p.paper,
             levels = dtos,
             camera = CameraDto(c.level.id, c.cx, c.cy, c.zoom, c.rotation),
-            nextLevelId = e.nextLevelId, nextStrokeId = e.nextStrokeId
+            nextLevelId = e.nextLevelId, nextStrokeId = e.nextStrokeId,
+            activeLayerId = p.activeLayerId
         )
     }
 
@@ -107,6 +109,7 @@ object ProjectStorage {
         p.name = dto.name
         p.layers.clear()
         p.layers.addAll(dto.layers)
+        p.activeLayerId = dto.layers.firstOrNull { it.id == dto.activeLayerId }?.id ?: dto.layers.firstOrNull()?.id ?: 1L
         p.paper.color = dto.paper.color
         p.paper.pattern = dto.paper.pattern
 
@@ -165,18 +168,26 @@ object ProjectStorage {
         val dir = File(projectDir(ctx, name), "tiles")
         val files = dir.listFiles { f -> f.name.endsWith(".png") } ?: return
         for (f in files) {
-            val parts = f.nameWithoutExtension.split("_")
-            if (parts.size != 4) continue
-            val levelId = parts[0].toIntOrNull() ?: continue
-            val layerId = parts[1].toLongOrNull() ?: continue
-            val tx = parts[2].toIntOrNull() ?: continue
-            val ty = parts[3].toIntOrNull() ?: continue
-            val bmp = android.graphics.BitmapFactory.decodeFile(f.absolutePath)
-            if (bmp == null || bmp.width != tiles.TILE || bmp.height != tiles.TILE) continue
-            val t = tiles.tileFor(com.example.infinitedraw.render.RasterTiles.TileKey(levelId, layerId, tx, ty))
-            t.canvas.setBitmap(bmp)
-            t.bitmap = bmp
-            t.dirty = false
+            try {
+                val parts = f.nameWithoutExtension.split("_")
+                if (parts.size != 4) continue
+                val levelId = parts[0].toIntOrNull() ?: continue
+                val layerId = parts[1].toLongOrNull() ?: continue
+                val tx = parts[2].toIntOrNull() ?: continue
+                val ty = parts[3].toIntOrNull() ?: continue
+                val decoded = android.graphics.BitmapFactory.decodeFile(f.absolutePath) ?: continue
+                if (decoded.width != tiles.TILE || decoded.height != tiles.TILE) { decoded.recycle(); continue }
+                // CRITICAL fix: decoded bitmaps are immutable; tiles must be mutable
+                // (Canvas.setBitmap and later dab getPixels/setPixels require it).
+                val bmp = decoded.copy(android.graphics.Bitmap.Config.ARGB_8888, true)
+                decoded.recycle()
+                val t = tiles.tileFor(com.example.infinitedraw.render.RasterTiles.TileKey(levelId, layerId, tx, ty))
+                t.canvas.setBitmap(bmp)
+                t.bitmap = bmp
+                t.dirty = false
+            } catch (t: Throwable) {
+                Log.e(TAG, "tile load failed: ${f.name}", t)   // one bad tile must not sink the load
+            }
         }
     }
 
@@ -191,10 +202,21 @@ object ProjectStorage {
             val f = File(projectDir(ctx, name), "project.json")
             if (!f.exists()) return false
             deserialize(f.readText(), p, e)
-            com.example.infinitedraw.render.RasterTiles.clearAll()
-            loadTiles(ctx, name)
-            bitmaps?.clear()
-            loadImages(ctx, name, bitmaps)
+            // Testing fix: tile/image loading is non-fatal — the project data is already
+            // restored; a bad tile must not fail the whole load (which used to leave the
+            // app running on the default empty project, where a save would wipe data).
+            try {
+                com.example.infinitedraw.render.RasterTiles.clearAll()
+                loadTiles(ctx, name)
+            } catch (t: Throwable) {
+                Log.e(TAG, "tile restore failed (non-fatal)", t)
+            }
+            try {
+                bitmaps?.clear()
+                loadImages(ctx, name, bitmaps)
+            } catch (t: Throwable) {
+                Log.e(TAG, "image restore failed (non-fatal)", t)
+            }
             setLastProjectName(ctx, p.name)
             true
         } catch (t: Throwable) {

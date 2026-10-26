@@ -20,6 +20,8 @@ class CanvasRenderer {
     private val dashEffect = android.graphics.DashPathEffect(floatArrayOf(14f, 8f), 0f)
     // Step 24: worldToScreen scratch buffer (never used reentrantly within one draw path).
     private val wsOut = FloatArray(2)
+    // Testing fix (plan Step 10): saveLayer paint for layer opacity + blend.
+    private val layerPaint = Paint()
 
     private class Frame(val level: ZoomLevel, val x: Double, val y: Double, val z: Double, val exclude: ZoomLevel?)
 
@@ -128,15 +130,21 @@ class CanvasRenderer {
         val selOff = sel != null && sel.levelId == level.id && (vm.previewDx != 0f || vm.previewDy != 0f)
         for (layer in vm.project.layers) {
             if (!layer.visible) continue
-            val layerAlpha = (layer.opacity * 255).toInt().coerceIn(0, 255)
-            val save = canvas.save()
-            paint.xfermode = blendMode(layer.blend)
-            drawRasterTiles(canvas, vm, level, camX, camY, zoom, w, h, layer.id, layerAlpha)
+            // Testing fix (plan Step 10): wrap the WHOLE layer in saveLayer when it has
+            // opacity < 1 or a blend mode — previously only tiles/images got the alpha and
+            // vector strokes ignored layer opacity entirely. Plain layers skip saveLayer (fast).
+            val needsLayer = layer.opacity < 1f || layer.blend != com.example.infinitedraw.model.LayerBlend.NORMAL
+            val save = if (needsLayer) {
+                layerPaint.alpha = (layer.opacity * 255).toInt().coerceIn(0, 255)
+                layerPaint.blendMode = blendOf(layer.blend)
+                canvas.saveLayer(null, layerPaint)
+            } else canvas.save()
+            drawRasterTiles(canvas, vm, level, camX, camY, zoom, w, h, layer.id)
             for (img in level.images) {
                 if (img.layerId != layer.id) continue
                 val iox = if (selOff && sel!!.imageId == img.id) vm.previewDx.toDouble() else 0.0
                 val ioy = if (selOff && sel!!.imageId == img.id) vm.previewDy.toDouble() else 0.0
-                drawImage(canvas, vm, img, camX, camY, zoom, w, h, layerAlpha, iox, ioy)
+                drawImage(canvas, vm, img, camX, camY, zoom, w, h, iox, ioy)
             }
             for (s in level.strokes) {
                 if (s.layerId != layer.id) continue
@@ -145,7 +153,6 @@ class CanvasRenderer {
                 val soy = if (selOff && sel!!.strokeId == s.id) vm.previewDy.toDouble() else 0.0
                 drawStroke(canvas, s, camX, camY, zoom, w, h, paint, path, sox, soy, vm.engine.camera.rotation)
             }
-            paint.xfermode = null
             canvas.restoreToCount(save)
         }
         drawSelectionOutline(canvas, vm, level, camX, camY, zoom, w, h)
@@ -188,7 +195,7 @@ class CanvasRenderer {
 
     /** Phase 2: draw every raster tile of this level+layer that intersects the viewport. */
     private fun drawRasterTiles(canvas: Canvas, vm: DrawingViewModel, level: ZoomLevel, camX: Double, camY: Double,
-                                zoom: Double, w: Int, h: Int, layerId: Long, layerAlpha: Int) {
+                                zoom: Double, w: Int, h: Int, layerId: Long) {
         val rt = com.example.infinitedraw.render.RasterTiles
         val rot = vm.engine.camera.rotation
         val sinR = sin(rot); val cosR = cos(rot)
@@ -214,7 +221,6 @@ class CanvasRenderer {
                 val sx1 = ((x1 - camX) * zoom + w / 2.0).toFloat()
                 val sy1 = ((y1 - camY) * zoom + h / 2.0).toFloat()
                 val dst = android.graphics.RectF(sx0, sy0, sx1, sy1)
-                paint.alpha = layerAlpha
                 paint.style = Paint.Style.FILL
                 paint.isFilterBitmap = true
                 val save = canvas.save()
@@ -226,7 +232,7 @@ class CanvasRenderer {
     }
 
     private fun drawImage(canvas: Canvas, vm: DrawingViewModel, img: com.example.infinitedraw.model.PlacedImage,
-                          camX: Double, camY: Double, zoom: Double, w: Int, h: Int, layerAlpha: Int,
+                          camX: Double, camY: Double, zoom: Double, w: Int, h: Int,
                           offX: Double = 0.0, offY: Double = 0.0) {
         val bmp = vm.bitmaps[img.id] ?: return
         val rot = vm.engine.camera.rotation
@@ -240,23 +246,22 @@ class CanvasRenderer {
         val r = ((img.x + offX + img.w - camX) * zoom + w / 2f).toFloat()
         val b = ((img.y + offY + img.h - camY) * zoom + h / 2f).toFloat()
         val dst = android.graphics.RectF(l, t, r, b)
-        paint.alpha = layerAlpha
         paint.style = Paint.Style.FILL
         paint.isAntiAlias = true
         val save = canvas.save()
         canvas.rotate(Math.toDegrees(rot).toFloat(), (l + r) / 2f, (t + b) / 2f)
         canvas.drawBitmap(bmp, null, dst, paint)
         canvas.restoreToCount(save)
-        paint.alpha = 255
     }
 
-    private fun blendMode(blend: com.example.infinitedraw.model.LayerBlend): android.graphics.PorterDuffXfermode? = when (blend) {
-        com.example.infinitedraw.model.LayerBlend.NORMAL -> null
-        com.example.infinitedraw.model.LayerBlend.MULTIPLY -> android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.MULTIPLY)
-        com.example.infinitedraw.model.LayerBlend.SCREEN -> android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SCREEN)
-        com.example.infinitedraw.model.LayerBlend.OVERLAY -> android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.OVERLAY)
-        com.example.infinitedraw.model.LayerBlend.DARKEN -> android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DARKEN)
-        com.example.infinitedraw.model.LayerBlend.LIGHTEN -> android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.LIGHTEN)
+    /** Testing fix (plan Step 10): layer blend for the saveLayer paint (minSdk 29). */
+    private fun blendOf(b: com.example.infinitedraw.model.LayerBlend): android.graphics.BlendMode = when (b) {
+        com.example.infinitedraw.model.LayerBlend.NORMAL -> android.graphics.BlendMode.SRC_OVER
+        com.example.infinitedraw.model.LayerBlend.MULTIPLY -> android.graphics.BlendMode.MULTIPLY
+        com.example.infinitedraw.model.LayerBlend.SCREEN -> android.graphics.BlendMode.SCREEN
+        com.example.infinitedraw.model.LayerBlend.OVERLAY -> android.graphics.BlendMode.OVERLAY
+        com.example.infinitedraw.model.LayerBlend.DARKEN -> android.graphics.BlendMode.DARKEN
+        com.example.infinitedraw.model.LayerBlend.LIGHTEN -> android.graphics.BlendMode.LIGHTEN
     }
 
     private fun drawInProgress(canvas: Canvas, vm: DrawingViewModel, w: Int, h: Int) {
@@ -329,11 +334,11 @@ class CanvasRenderer {
                 paint.alpha = ((paint.color ushr 24) * 0.7f).toInt().coerceAtMost(255)
             }
             BrushType.AIRBRUSH -> {
-                // soft blurred edge
-                paint.maskFilter = android.graphics.BlurMaskFilter(
-                    (0.35f * s.width * zoom).toFloat().coerceAtLeast(1f),
-                    android.graphics.BlurMaskFilter.Blur.NORMAL)
-                paint.alpha = ((paint.color ushr 24) * 0.8f).toInt().coerceAtMost(255)
+                // Step 8 spec: 50% alpha + soft blur radius 0.6*width*zoom, only while <= 300px
+                val blur = (0.6 * s.width * zoom).toFloat()
+                if (blur in 1f..300f)
+                    paint.maskFilter = android.graphics.BlurMaskFilter(blur, android.graphics.BlurMaskFilter.Blur.NORMAL)
+                paint.alpha = ((paint.color ushr 24) * 0.5f).toInt().coerceAtMost(255)
             }
             else -> {}
         }

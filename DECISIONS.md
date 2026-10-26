@@ -137,6 +137,35 @@ simplest option, log it in DECISIONS.md, continue").
   unrotated; new saves round-trip rotation. Camera-descend/ascend is
   unaffected (child frames are axis-aligned, so one theta serves all levels).
 
+## On-device test session (2026-10-26)
+
+- adb test harness: single-finger taps/swipes only — `input` cannot emulate a
+  stylus or two pointers, so pinch-zoom, twist rotation and palm rejection stay
+  manual. Rotation was incidentally confirmed (overlay rot=-15, coherent render).
+- Conditional unlock: only swipe up when the keyguard actually holds focus. A
+  swipe on an already-unlocked app pans the canvas — several batches silently
+  panned the camera ~1500 units each before this was diagnosed via temporary
+  SELECTDBG logs (the Select "failures" were taps on blank paper far away).
+- Evidence: screenshot byte/PIL pixel diffs, uiautomator dumps, logcat crash
+  buffer, run-as file reads. Three crash-class bugs (raster offset, toast-on-IO,
+  immutable tiles) were all caught in logcat -b crash.
+- Samsung quirks: a stale freeform pop-up task from a previous session corrupted
+  windowing (black screens, off-screen window); fixed by reboot + relaunch.
+  "Frecess" repeatedly killed the app once the screen slept; mitigated with the
+  doze whitelist + wake-before-batch, and the camera/layer autosave now protects
+  state across kills.
+- DocumentsUI appends ".zip" to CreateDocument("application/zip") saves, so
+  exports land as "<name>.uzw.zip"; importing one derives the folder name
+  "Untitled.uzw" (double extension — only the last is stripped). Cosmetic; a
+  follow-up could use application/octet-stream as the .uzw MIME.
+- Pre-testing device data is backed up at
+  C:\Users\tgizz\AppData\Local\hermes\cache\scratch\infinitedraw_data.tar
+  (projects/Untitled + 2 image PNGs). The device project now also contains the
+  test strokes/layers from this session; restore from the tar or delete the test
+  Layer 2 to clean up. Test artifacts on the tablet: Download/Untitled.uzw.zip,
+  the app-external Pictures/export_*.png, and imported projects
+  "Untitled.uzw" + "Untitled.uzw (2)".
+
 ## Known limitations (carried over from PLAN.md)
 
 - Strokes with screen coordinates beyond ±100000 are clamped, so huge strokes
