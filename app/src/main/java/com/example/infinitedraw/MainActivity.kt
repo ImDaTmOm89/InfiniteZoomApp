@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,6 +41,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.infinitedraw.input.DrawingView
 import com.example.infinitedraw.ui.DrawingViewModel
 import com.example.infinitedraw.ui.theme.InfiniteDrawTheme
+import com.example.infinitedraw.ui.components.FloatingToolPanel
 import com.example.infinitedraw.ui.panels.BrushSettingsPanel
 import com.example.infinitedraw.ui.panels.ColorPickerPanel
 import com.example.infinitedraw.ui.panels.LayersPanel
@@ -53,17 +55,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 
 enum class PanelType { COLOR, BRUSH, LAYERS, PAPER, SELECTION }
-
-@Composable
-fun toolbarButton(label: String, onClick: () -> Unit) {
-    Text(
-        label,
-        style = MaterialTheme.typography.labelLarge,   // Bug #1 fix: compact buttons fit any window
-        modifier = Modifier
-            .padding(2.dp)
-            .clickable(onClick = onClick)
-    )
-}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -86,9 +77,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainScreen(vm: DrawingViewModel = viewModel()) {
-    var fingerDraws by remember { mutableStateOf(false) }
     var panel by remember { mutableStateOf<PanelType?>(null) }
-    var size by remember { mutableStateOf(vm.brushSizePx) }
     var viewW by remember { mutableStateOf(1080) }
     var viewH by remember { mutableStateOf(1920) }
     val context = LocalContext.current
@@ -142,91 +131,17 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(obs); vm.saveNow() }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val containerW = constraints.maxWidth
+        val containerH = constraints.maxHeight
         AndroidView(
             factory = { ctx -> DrawingView(ctx, vm) },
             modifier = Modifier.fillMaxSize(),
             update = { v -> viewW = v.width; viewH = v.height }
         )
 
-        // Toolbar (left column, starts below the debug level/zoom text)
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(start = 12.dp, top = 96.dp)
-                .verticalScroll(rememberScrollState()),   // Bug #1 fix: all buttons reachable in short windows
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            toolbarButton("Undo") { vm.undo() }
-            toolbarButton("Redo") { vm.redo() }
-            toolbarButton(if (panel == PanelType.COLOR) "Color ●" else "Color") {
-                panel = if (panel == PanelType.COLOR) null else PanelType.COLOR
-            }
-            toolbarButton(if (panel == PanelType.BRUSH) "Brush ●" else "Brush") {
-                panel = if (panel == PanelType.BRUSH) null else PanelType.BRUSH
-            }
-            toolbarButton(if (panel == PanelType.LAYERS) "Layers ●" else "Layers") {
-                panel = if (panel == PanelType.LAYERS) null else PanelType.LAYERS
-            }
-            toolbarButton(if (panel == PanelType.PAPER) "Paper ●" else "Paper") {
-                panel = if (panel == PanelType.PAPER) null else PanelType.PAPER
-            }
-            toolbarButton(if (fingerDraws) "Finger: On" else "Finger: Off") {
-                fingerDraws = !fingerDraws; vm.fingerDraws = fingerDraws
-            }
-            toolbarButton("Reset View") {
-                vm.engine.camera.zoom = 1.0; vm.engine.camera.cx = 0.0; vm.engine.camera.cy = 0.0
-                vm.autosave.schedule()   // testing fix: camera changes must survive force-stop
-                vm.redraw?.invoke()
-            }
-            toolbarButton("Reset Rotation") {
-                vm.engine.camera.rotation = 0.0
-                vm.autosave.schedule()   // testing fix
-                vm.redraw?.invoke()
-            }
-            // Step 21: Select tool — tap picks, drag inside the dashed box moves.
-            toolbarButton(if (vm.tool == com.example.infinitedraw.ui.Tool.SELECT) "Select ●" else "Select") {
-                vm.tool = com.example.infinitedraw.ui.Tool.SELECT
-            }
-            // Raster tools; the active one is marked with a bullet
-            listOf("Oil" to com.example.infinitedraw.ui.Tool.OIL,
-                   "Mix" to com.example.infinitedraw.ui.Tool.MIX,
-                   "Smudge" to com.example.infinitedraw.ui.Tool.SMUDGE,
-                   "Raster Erase" to com.example.infinitedraw.ui.Tool.RERASER).forEach { (label, t) ->
-                toolbarButton(if (vm.tool == t) "$label ●" else label) { vm.tool = t }
-            }
-            toolbarButton("Insert Image") {
-                imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            }
-            toolbarButton("Export PNG") {
-                vm.exportPng(vm.viewW.takeIf { it > 0 } ?: 1440, vm.viewH.takeIf { it > 0 } ?: 2304) { path ->
-                    android.widget.Toast.makeText(context,
-                        if (path != null) "Saved: $path" else "Export failed",
-                        android.widget.Toast.LENGTH_SHORT).show()
-                }
-            }
-            toolbarButton("Export .uzw") {
-                uzwExport.launch("${vm.project.name}.uzw")
-            }
-            toolbarButton("Import .uzw") {
-                uzwImport.launch(arrayOf("*/*"))
-            }
-        }
-
-        // Left strip: size slider (bottom-start — Bug #1 fix: can never overlap the toolbar)
-        Column(
-            Modifier
-                .align(Alignment.BottomStart)
-                .padding(8.dp)
-        ) {
-            Text("Size")
-            Slider(
-                value = size,
-                onValueChange = { size = it; vm.brushSizePx = it },
-                valueRange = 1f..80f,
-                modifier = Modifier.width(120.dp)
-            )
-        }
+        // U4: the floating tool panel replaces the old left strip + size slider.
+        FloatingToolPanel(vm, containerW, containerH, onOpenColor = { panel = PanelType.COLOR })
 
         // Right panel
         panel?.let { p ->

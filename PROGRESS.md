@@ -269,8 +269,8 @@ Last updated: 2026-10-26 (on-device test session complete — 10 bugs found & fi
 From here on the UI_MASTER_PLAN.md Part 2 rules govern UI work (one step at a time,
 STOP after each, git read-only unless the owner asks for a commit).
 
-CURRENT STEP: U3 - Reusable components - DONE (build-verified; exercised in U4+)
-NEXT ACTION: on "go" build Step U4 (the floating tool panel — drag, snap, collapse, flyout).
+CURRENT STEP: U4 - The floating tool panel - DONE (agent-verified on device)
+NEXT ACTION: on "go" build Step U5 (top action pill and menu).
 
 - Step U1 - Theme and full-screen immersive mode — WAITING FOR OWNER TEST
   (ui/theme/Color.kt + Theme.kt with the design tokens; edge-to-edge + hidden
@@ -292,7 +292,24 @@ NEXT ACTION: on "go" build Step U4 (the floating tool panel — drag, snap, coll
   48dp ToolButton with accentSoft/accent selected state and bounded ripple;
   GradientSlider 28dp bar + white-ringed 24dp thumb with tap and horizontal-drag
   input via rememberUpdatedState; SectionTitle 12sp uppercase textSecondary.)
-- Step U4 - The floating tool panel (drag, snap, collapse, flyout) — NOT STARTED
+- Step U4 - The floating tool panel (drag, snap, collapse, flyout) — DONE (agent-verified)
+  (ui/components/FloatingToolPanel.kt + ViewModel state panelFracX/Y/collapsed
+  persisted in SharedPreferences("ui") + flyoutOpen (not persisted; closes when a
+  stroke begins via beginStroke). Panel: drag handle pill, 7 ToolButtons in a
+  PanelSurface (PEN MARKER AIRBRUSH PENCIL CHARCOAL ERASER SELECT; tap selected
+  toggles flyout), 40x1dp divider, 36dp color circle -> color panel, size dot
+  (6-40dp), collapse chevron toward the nearest edge. Drag math exactly per the
+  plan (fractions of free space, spring snap to the nearest edge on release,
+  rememberUpdatedState in the drag lambda). Flyout: 240dp PanelSurface opposite
+  the snapped side with Size slider + live preview circle + Pressure switch for
+  PEN/PENCIL/CHARCOAL. Old left toolbar + size slider removed from MainScreen
+  (root is now BoxWithConstraints). Agent-verified on the tablet: panel renders
+  as a narrow 64dp floating panel, vertical drag position matches the math
+  exactly (fracY 0.72 -> y=873), drag past center snaps RIGHT (x1290-1413),
+  sub-center drags snap LEFT, position + state survive force-stop/relaunch,
+  flyout opens (SIZE + Pressure nodes in the UI dump), collapse leaves one
+  button, expand restores, zero crashes. Fixed during testing: the divider used
+  fillMaxWidth which stretched the whole panel to screen width -> 40dp fixed.)
 - Step U5 - Top action pill and menu — NOT STARTED
 - Step U6 - Auto-hiding chrome, zoom indicator, first-run hint — NOT STARTED
 - Step U7 - Color panel redesign — NOT STARTED

@@ -83,10 +83,30 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     private fun prefs() =
         getApplication<Application>().getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
 
+    // ---- U4: floating tool panel state (declared before init reads them) ----
+    var panelFracX by mutableStateOf(0f)        // 0 = left edge, 1 = right edge (of free space)
+    var panelFracY by mutableStateOf(0.25f)
+    var panelCollapsed by mutableStateOf(false)
+    var flyoutOpen by mutableStateOf(false)     // not persisted
+
+    fun savePanelPrefs() {
+        getApplication<Application>().getSharedPreferences("ui", android.content.Context.MODE_PRIVATE)
+            .edit()
+            .putFloat("panelFracX", panelFracX)
+            .putFloat("panelFracY", panelFracY)
+            .putBoolean("panelCollapsed", panelCollapsed)
+            .apply()
+    }
+
     init {
         val sp = prefs()
         stabilizer = sp.getFloat("stabilizer", 0.3f)
         pressureGamma = sp.getFloat("pressureGamma", 1.0f)
+        // U4: floating tool panel position (fractions of free space) + collapse state.
+        val up = getApplication<Application>().getSharedPreferences("ui", android.content.Context.MODE_PRIVATE)
+        panelFracX = up.getFloat("panelFracX", 0f)
+        panelFracY = up.getFloat("panelFracY", 0.25f)
+        panelCollapsed = up.getBoolean("panelCollapsed", false)
     }
 
     // Smoothing state (SCREEN coordinates, reset at stroke start)
@@ -272,6 +292,7 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
 
     fun beginStroke(sx: Float, sy: Float, p: Float, w: Int, h: Int) {
         w0 = w; h0 = h
+        flyoutOpen = false   // U4: the flyout closes the moment a stroke begins
         // Step 21: SELECT runs its own gesture and creates no stroke. It works
         // regardless of the active layer state (the hit test filters layers itself).
         if (tool == Tool.SELECT) { selectBegin(sx, sy, w, h); redraw?.invoke(); return }
