@@ -54,6 +54,8 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     var brushType = BrushType.PEN
     var brushSizePx = 6f
     var color: Int = android.graphics.Color.BLACK
+    /** U1: debug overlay (level/zoom/rot) hidden by default; Settings (U9) will expose it. */
+    var showDebug = false
     val recentColors = mutableListOf<Int>()
     // Testing fix: reactive so the Layers panel recomposes on selection change.
     private var _activeLayerId by mutableStateOf(1L)

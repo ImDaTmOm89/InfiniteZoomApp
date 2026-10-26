@@ -264,6 +264,56 @@ Last updated: 2026-10-26 (on-device test session complete — 10 bugs found & fi
   cancels fling). Pinch-zoom (2-finger) never starts a fling; drawing mode
   unaffected. Build + tests pass.
 
+## UI master plan (U1-U18) — first read 2026-10-26
+
+From here on the UI_MASTER_PLAN.md Part 2 rules govern UI work (one step at a time,
+STOP after each, git read-only unless the owner asks for a commit).
+
+CURRENT STEP: U3 - Reusable components - DONE (build-verified; exercised in U4+)
+NEXT ACTION: on "go" build Step U4 (the floating tool panel — drag, snap, collapse, flyout).
+
+- Step U1 - Theme and full-screen immersive mode — WAITING FOR OWNER TEST
+  (ui/theme/Color.kt + Theme.kt with the design tokens; edge-to-edge + hidden
+  system bars in MainActivity; debug text gated behind vm.showDebug, default off.
+  Agent-verified on device: no status/nav bar, edge-to-edge canvas, no debug
+  text, toolbar intact. Transitional quirk: toolbar text now renders light on
+  the white canvas (dark theme text color) — fixed in U4/U5 when the toolbar
+  becomes dark floating panels.)
+- Step U2 - Icon set (no icon library) — DONE (agent-verified)
+  (ui/components/UiIcon.kt: 22 icons hand-drawn on a 24-unit grid per the plan's
+  coordinates — PEN MARKER AIRBRUSH PENCIL CHARCOAL ERASER SELECT UNDO REDO
+  LAYERS EYE EYE_OFF LOCK UNLOCK MENU CHEVRON_LEFT CHEVRON_RIGHT PLUS TRASH
+  CLOSE SETTINGS IMAGE. All 22 drawn at once in a temporary row on the tablet:
+  no crash, none malformed (vision-checked); row then removed per the plan.
+  contentDescription is attached via semantics when non-null.)
+- Step U3 - Reusable components — DONE (build-verified)
+  (ui/components/PanelSurface.kt, ToolButton.kt, GradientSlider.kt, SectionTitle.kt
+  per the plan's exact specs: 20dp corners + 12dp shadow + outline border panel;
+  48dp ToolButton with accentSoft/accent selected state and bounded ripple;
+  GradientSlider 28dp bar + white-ringed 24dp thumb with tap and horizontal-drag
+  input via rememberUpdatedState; SectionTitle 12sp uppercase textSecondary.)
+- Step U4 - The floating tool panel (drag, snap, collapse, flyout) — NOT STARTED
+- Step U5 - Top action pill and menu — NOT STARTED
+- Step U6 - Auto-hiding chrome, zoom indicator, first-run hint — NOT STARTED
+- Step U7 - Color panel redesign — NOT STARTED
+- Step U8 - Layers panel redesign — NOT STARTED
+- Step U9 - Settings panel and canvas-first polish — NOT STARTED
+- Step U10 - S Pen extras (optional) — NOT STARTED
+- Step U11 - Places: naming levels, place card, breadcrumb — NOT STARTED
+- Step U12 - Fly-to and history — NOT STARTED
+- Step U13 - Search — NOT STARTED
+- Step U14 - Minimap — NOT STARTED
+- Step U15 - Orientation: compass and Home — NOT STARTED
+- Step U16 - Procreate-style gestures and edge sliders — NOT STARTED
+- Step U17 - Zoom ergonomics — NOT STARTED
+- Step U18 - Gallery: "My worlds" — NOT STARTED
+
+Prerequisite check (2026-10-26): core app built AND verified on-device — the
+on-device test session above is exactly that verification. All numbered core
+features the UI steps reference (panels, undo, layers, paper, images,
+persistence, PNG export, momentum, smoothing, select, pencil/charcoal, world
+files, rotation) exist and pass.
+
 ## Steps 19-24 (added 2026-10-22) — ALL DONE
 
 Order was fixed as listed; every entry below is finished. One step at a time,

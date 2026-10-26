@@ -29,7 +29,8 @@ class CanvasRenderer {
         drawPaper(canvas, vm, w, h)
         renderWorld(canvas, vm, w, h)
         val cam = vm.engine.camera
-        if (!debug) return
+        // U1: debug text shows only when the renderer allows it AND vm.showDebug is on.
+        if (!debug || !vm.showDebug) return
         // debug text
         paint.style = Paint.Style.FILL
         paint.color = Color.BLACK

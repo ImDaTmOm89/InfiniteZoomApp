@@ -7,6 +7,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -36,6 +39,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.infinitedraw.input.DrawingView
 import com.example.infinitedraw.ui.DrawingViewModel
+import com.example.infinitedraw.ui.theme.InfiniteDrawTheme
 import com.example.infinitedraw.ui.panels.BrushSettingsPanel
 import com.example.infinitedraw.ui.panels.ColorPickerPanel
 import com.example.infinitedraw.ui.panels.LayersPanel
@@ -64,9 +68,15 @@ fun toolbarButton(label: String, onClick: () -> Unit) {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // U1: edge-to-edge, hide the system bars (swiping from an edge shows them briefly).
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
         setContent {
-            MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
+            InfiniteDrawTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = androidx.compose.ui.graphics.Color.Black) {
                     MainScreen()
                 }
             }
