@@ -269,8 +269,8 @@ Last updated: 2026-10-26 (on-device test session complete — 10 bugs found & fi
 From here on the UI_MASTER_PLAN.md Part 2 rules govern UI work (one step at a time,
 STOP after each, git read-only unless the owner asks for a commit).
 
-CURRENT STEP: U4 - The floating tool panel - DONE (agent-verified on device)
-NEXT ACTION: on "go" build Step U5 (top action pill and menu).
+CURRENT STEP: U5 - Top action pill and menu - DONE (agent-verified on device)
+NEXT ACTION: on "go" build Step U6 (auto-hiding chrome, zoom indicator, first-run hint).
 
 - Step U1 - Theme and full-screen immersive mode — WAITING FOR OWNER TEST
   (ui/theme/Color.kt + Theme.kt with the design tokens; edge-to-edge + hidden
@@ -310,7 +310,22 @@ NEXT ACTION: on "go" build Step U5 (top action pill and menu).
   flyout opens (SIZE + Pressure nodes in the UI dump), collapse leaves one
   button, expand restores, zero crashes. Fixed during testing: the divider used
   fillMaxWidth which stretched the whole panel to screen width -> 40dp fixed.)
-- Step U5 - Top action pill and menu — NOT STARTED
+- Step U5 - Top action pill and menu — DONE (agent-verified)
+  (ui/components/TopActionPill.kt: PanelSurface Row at TopCenter with UNDO
+  (38% alpha + no ripple when disabled), REDO (same with canRedo), LAYERS
+  (highlights while the layers panel is open), MENU with a dark DropdownMenu
+  holding the EXISTING actions in world vocabulary: Insert image, Paper,
+  Export picture, Export world file, Import world file. SKIPPED per the plan
+  (features not built yet): the SETTINGS button (needs U9) and the My worlds /
+  New world / Places menu items (need U12/U18). Engine: UndoStack gained an
+  onChanged hook so the VM can hold canUndo/canRedo as reactive Compose state;
+  ToolButton gained an enabled param (alpha + ripple off). The old letter-label
+  row was already removed in U4. Agent-verified on the tablet: pill renders
+  top-center with dimmed UNDO/REDO on an empty stack (vision-confirmed); the
+  Add Layer -> pill UNDO cycle removes the layer and the Layers panel
+  recomposes; the menu opens with all 5 items; "Paper" opens the paper panel;
+  no crashes. Bug found and fixed during the step: vm.undo()/redo() did not
+  bump layersVersion, so the Layers panel showed stale rows after an undo.)
 - Step U6 - Auto-hiding chrome, zoom indicator, first-run hint — NOT STARTED
 - Step U7 - Color panel redesign — NOT STARTED
 - Step U8 - Layers panel redesign — NOT STARTED

@@ -174,10 +174,12 @@ class RasterCommand(
 
 class UndoStack {
     private val undo = ArrayDeque<Command>(); private val redo = ArrayDeque<Command>()
-    fun exec(c: Command, e: InfiniteZoomEngine, p: Project) { c.apply(e, p); undo.addLast(c); redo.clear() }
-    fun undo(e: InfiniteZoomEngine, p: Project) { undo.removeLastOrNull()?.let { it.revert(e, p); redo.addLast(it) } }
-    fun redo(e: InfiniteZoomEngine, p: Project) { redo.removeLastOrNull()?.let { it.apply(e, p); undo.addLast(it) } }
+    /** U5: UI hook so canUndo/canRedo can be reactive Compose state. */
+    var onChanged: (() -> Unit)? = null
+    fun exec(c: Command, e: InfiniteZoomEngine, p: Project) { c.apply(e, p); undo.addLast(c); redo.clear(); onChanged?.invoke() }
+    fun undo(e: InfiniteZoomEngine, p: Project) { undo.removeLastOrNull()?.let { it.revert(e, p); redo.addLast(it) }; onChanged?.invoke() }
+    fun redo(e: InfiniteZoomEngine, p: Project) { redo.removeLastOrNull()?.let { it.apply(e, p); undo.addLast(it) }; onChanged?.invoke() }
     val canUndo get() = undo.isNotEmpty()
     val canRedo get() = redo.isNotEmpty()
-    fun clear() { undo.clear(); redo.clear() }
+    fun clear() { undo.clear(); redo.clear(); onChanged?.invoke() }
 }

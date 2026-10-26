@@ -98,7 +98,15 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
             .apply()
     }
 
+    // ---- U5: reactive undo/redo availability for the top pill ----
+    var canUndo by mutableStateOf(false)
+        private set
+    var canRedo by mutableStateOf(false)
+        private set
+
     init {
+        commands.onChanged = { canUndo = commands.canUndo; canRedo = commands.canRedo }
+        canUndo = commands.canUndo; canRedo = commands.canRedo
         val sp = prefs()
         stabilizer = sp.getFloat("stabilizer", 0.3f)
         pressureGamma = sp.getFloat("pressureGamma", 1.0f)
@@ -476,8 +484,8 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun undo() { commands.undo(engine, project); redraw?.invoke(); autosave.schedule() }
-    fun redo() { commands.redo(engine, project); redraw?.invoke(); autosave.schedule() }
+    fun undo() { commands.undo(engine, project); bumpLayers(); redraw?.invoke(); autosave.schedule() }
+    fun redo() { commands.redo(engine, project); bumpLayers(); redraw?.invoke(); autosave.schedule() }
 
     fun saveNow() = autosave.flushNow()
 

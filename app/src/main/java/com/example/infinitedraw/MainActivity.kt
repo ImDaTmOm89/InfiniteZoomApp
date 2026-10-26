@@ -42,6 +42,7 @@ import com.example.infinitedraw.input.DrawingView
 import com.example.infinitedraw.ui.DrawingViewModel
 import com.example.infinitedraw.ui.theme.InfiniteDrawTheme
 import com.example.infinitedraw.ui.components.FloatingToolPanel
+import com.example.infinitedraw.ui.components.TopActionPill
 import com.example.infinitedraw.ui.panels.BrushSettingsPanel
 import com.example.infinitedraw.ui.panels.ColorPickerPanel
 import com.example.infinitedraw.ui.panels.LayersPanel
@@ -142,6 +143,28 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
 
         // U4: the floating tool panel replaces the old left strip + size slider.
         FloatingToolPanel(vm, containerW, containerH, onOpenColor = { panel = PanelType.COLOR })
+
+        // U5: top action pill (undo/redo/layers/menu). Settings arrives with U9;
+        // My worlds / New world / Places arrive with U12 / U18 (noted in PROGRESS.md).
+        TopActionPill(
+            vm = vm,
+            layersOpen = panel == PanelType.LAYERS,
+            onUndo = { vm.undo() },
+            onRedo = { vm.redo() },
+            onToggleLayers = { panel = if (panel == PanelType.LAYERS) null else PanelType.LAYERS },
+            onInsertImage = { imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+            onPaper = { panel = if (panel == PanelType.PAPER) null else PanelType.PAPER },
+            onExportPicture = {
+                vm.exportPng(vm.viewW.takeIf { it > 0 } ?: 1440, vm.viewH.takeIf { it > 0 } ?: 2304) { path ->
+                    android.widget.Toast.makeText(context,
+                        if (path != null) "Picture saved" else "Export failed",
+                        android.widget.Toast.LENGTH_SHORT).show()
+                }
+            },
+            onExportWorldFile = { uzwExport.launch("${vm.project.name}.uzw") },
+            onImportWorldFile = { uzwImport.launch(arrayOf("*/*")) },
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp),
+        )
 
         // Right panel
         panel?.let { p ->
