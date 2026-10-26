@@ -4,6 +4,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import com.example.infinitedraw.engine.InfiniteZoomEngine
 import com.example.infinitedraw.engine.AddImage
@@ -89,9 +90,11 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     var panelCollapsed by mutableStateOf(false)
     var flyoutOpen by mutableStateOf(false)     // not persisted
 
-    fun savePanelPrefs() {
+    private fun uiPrefs() =
         getApplication<Application>().getSharedPreferences("ui", android.content.Context.MODE_PRIVATE)
-            .edit()
+
+    fun savePanelPrefs() {
+        uiPrefs().edit()
             .putFloat("panelFracX", panelFracX)
             .putFloat("panelFracY", panelFracY)
             .putBoolean("panelCollapsed", panelCollapsed)
@@ -104,6 +107,24 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     var canRedo by mutableStateOf(false)
         private set
 
+    // ---- U6: auto-hiding chrome, zoom indicator, first-run hint ----
+    var uiVisible by mutableStateOf(true)
+    private var uiShowJob: kotlinx.coroutines.Job? = null
+    /** Chrome comes back 600 ms after the last stroke ends; a new stroke cancels the timer. */
+    fun scheduleShowUi() {
+        uiShowJob?.cancel()
+        uiShowJob = viewModelScope.launch { delay(600); uiVisible = true }
+    }
+    var hintVisible by mutableStateOf(false)    // U6 first-run hint
+    fun dismissHint() {
+        if (!hintVisible) return
+        hintVisible = false
+        uiPrefs().edit().putBoolean("hintShown", true).apply()
+    }
+    /** Bumped on every pan/zoom/rotate/fling frame so the ZoomChip can react. */
+    var cameraTick by mutableStateOf(0)
+    fun tickCamera() { cameraTick++ }
+
     init {
         commands.onChanged = { canUndo = commands.canUndo; canRedo = commands.canRedo }
         canUndo = commands.canUndo; canRedo = commands.canRedo
@@ -111,10 +132,12 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         stabilizer = sp.getFloat("stabilizer", 0.3f)
         pressureGamma = sp.getFloat("pressureGamma", 1.0f)
         // U4: floating tool panel position (fractions of free space) + collapse state.
-        val up = getApplication<Application>().getSharedPreferences("ui", android.content.Context.MODE_PRIVATE)
+        val up = uiPrefs()
         panelFracX = up.getFloat("panelFracX", 0f)
         panelFracY = up.getFloat("panelFracY", 0.25f)
         panelCollapsed = up.getBoolean("panelCollapsed", false)
+        // U6: the hint shows only on the very first run.
+        hintVisible = !up.getBoolean("hintShown", false)
     }
 
     // Smoothing state (SCREEN coordinates, reset at stroke start)
@@ -301,6 +324,8 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     fun beginStroke(sx: Float, sy: Float, p: Float, w: Int, h: Int) {
         w0 = w; h0 = h
         flyoutOpen = false   // U4: the flyout closes the moment a stroke begins
+        uiVisible = false    // U6: hide chrome while drawing; a new stroke cancels the show-timer
+        uiShowJob?.cancel()
         // Step 21: SELECT runs its own gesture and creates no stroke. It works
         // regardless of the active layer state (the hit test filters layers itself).
         if (tool == Tool.SELECT) { selectBegin(sx, sy, w, h); redraw?.invoke(); return }
@@ -397,6 +422,7 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun endStroke() {
+        scheduleShowUi()   // U6: chrome returns 600 ms after the last gesture ends
         if (tool == Tool.SELECT) { selectEnd(w0, h0); return }
         val a = active; val lvl = activeLevel
         active = null
@@ -453,6 +479,7 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun cancelStroke() {
+        scheduleShowUi()   // U6
         if (tool == Tool.SELECT) { selectCancel(); return }
         active = null; pendingRemoved.clear()
         // Cancelled raster stroke: roll tiles back to the pre-stroke state.

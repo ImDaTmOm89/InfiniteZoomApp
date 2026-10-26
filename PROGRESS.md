@@ -269,8 +269,8 @@ Last updated: 2026-10-26 (on-device test session complete — 10 bugs found & fi
 From here on the UI_MASTER_PLAN.md Part 2 rules govern UI work (one step at a time,
 STOP after each, git read-only unless the owner asks for a commit).
 
-CURRENT STEP: U5 - Top action pill and menu - DONE (agent-verified on device)
-NEXT ACTION: on "go" build Step U6 (auto-hiding chrome, zoom indicator, first-run hint).
+CURRENT STEP: U6 - Auto-hiding chrome, zoom indicator, first-run hint - DONE (partial agent-verified; auto-hide + ZoomChip need the pen/pinch)
+NEXT ACTION: on "go" build Step U7 (color panel redesign).
 
 - Step U1 - Theme and full-screen immersive mode — WAITING FOR OWNER TEST
   (ui/theme/Color.kt + Theme.kt with the design tokens; edge-to-edge + hidden
@@ -326,7 +326,25 @@ NEXT ACTION: on "go" build Step U6 (auto-hiding chrome, zoom indicator, first-ru
   recomposes; the menu opens with all 5 items; "Paper" opens the paper panel;
   no crashes. Bug found and fixed during the step: vm.undo()/redo() did not
   bump layersVersion, so the Layers panel showed stale rows after an undo.)
-- Step U6 - Auto-hiding chrome, zoom indicator, first-run hint — NOT STARTED
+- Step U6 - Auto-hiding chrome, zoom indicator, first-run hint — DONE (partial agent-verify)
+  (ViewModel: uiVisible + 600ms show-timer (beginStroke hides + cancels,
+  endStroke/cancelStroke restart); hintVisible + dismissHint persisted via
+  SharedPreferences("ui") "hintShown"; cameraTick bumped by DrawingView on every
+  navigate/fling frame. Engine: depth() added. ui/components/ZoomChip.kt:
+  BottomCenter 16dp PanelSurface pill "Depth n - x<mag>" (mag < 1000 as %.1f,
+  else %.1e normalized to 1.2e6), shows on depth/zoomBucket change (bucket =
+  log10(zoomInRoot)*20), fades 1.5s after the last change, suppresses the
+  launch-time show, hides while drawing. ui/components/FirstRunHint.kt:
+  centered card "Pen draws / One finger pans / Two fingers zoom", dismisses on
+  any tap (DrawingView ACTION_DOWN + card click) or 6s. MainScreen: tool panel,
+  flyout, top pill and right panels all wrapped in AnimatedVisibility
+  (fadeIn/fadeOut 150ms) — hidden chrome leaves composition so it can never
+  swallow a touch. Agent-verified on the tablet: hint renders with the exact
+  three lines, disappears on tap, never returns after relaunch; chrome + panel
+  interactions still work through the visibility wrap (flyout opens/closes).
+  NOT adb-testable (need stylus/pinch): controls fading during a pen stroke +
+  returning 0.6s later, and the ZoomChip appearing during a pinch — those are
+  the owner's MY TEST items. Zero crashes.)
 - Step U7 - Color panel redesign — NOT STARTED
 - Step U8 - Layers panel redesign — NOT STARTED
 - Step U9 - Settings panel and canvas-first polish — NOT STARTED

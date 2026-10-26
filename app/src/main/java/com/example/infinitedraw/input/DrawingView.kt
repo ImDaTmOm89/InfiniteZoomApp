@@ -64,6 +64,7 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 stopFling()
+                vm.dismissHint()   // U6: any tap dismisses the first-run hint
                 if (isStylus(e, 0)) { stylusDown = true; startDraw(e, 0) }
                 else if (vm.fingerDraws) startDraw(e, 0)
                 else startNavigate(e)
@@ -137,6 +138,7 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
         }
         lastWasOneFingerPan = n == 1 && lastCount == 1   // momentum only after a pure 1-finger pan
         lastCount = n; lastMx = mx; lastMy = my; lastDist = dist; lastAngle = angle
+        vm.tickCamera()   // U6: keep the ZoomChip in sync while panning/zooming
     }
 
     /** Testing fix: persist camera moves (plan Step 18: force-stop + reopen must be identical). */
@@ -161,6 +163,7 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
                 flingLastNs = now
                 vm.engine.panBy(flingVx * dt, flingVy * dt)
                 navDirty = true
+                vm.tickCamera()   // U6: the ZoomChip follows the fling too
                 val decay = 0.92.pow(dt * 60.0).toFloat()
                 flingVx *= decay; flingVy *= decay
                 invalidate()

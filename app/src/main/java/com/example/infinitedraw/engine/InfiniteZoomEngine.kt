@@ -101,4 +101,11 @@ class InfiniteZoomEngine {
     }
     /** Pixels per ROOT unit: zoom * F^depth. */
     fun zoomInRoot(): Double { var z = camera.zoom; var l = camera.level; while (l.parent != null) { z *= F; l = l.parent!! }; return z }
+
+    /** U6: number of parents from the current level up to the root (0 = root). */
+    fun depth(): Int {
+        var d = 0; var l = camera.level
+        while (l.parent != null) { d++; l = l.parent!! }
+        return d
+    }
 }

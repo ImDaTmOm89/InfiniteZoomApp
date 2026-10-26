@@ -6,6 +6,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -43,6 +47,8 @@ import com.example.infinitedraw.ui.DrawingViewModel
 import com.example.infinitedraw.ui.theme.InfiniteDrawTheme
 import com.example.infinitedraw.ui.components.FloatingToolPanel
 import com.example.infinitedraw.ui.components.TopActionPill
+import com.example.infinitedraw.ui.components.ZoomChip
+import com.example.infinitedraw.ui.components.FirstRunHint
 import com.example.infinitedraw.ui.panels.BrushSettingsPanel
 import com.example.infinitedraw.ui.panels.ColorPickerPanel
 import com.example.infinitedraw.ui.panels.LayersPanel
@@ -142,45 +148,70 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
         )
 
         // U4: the floating tool panel replaces the old left strip + size slider.
-        FloatingToolPanel(vm, containerW, containerH, onOpenColor = { panel = PanelType.COLOR })
+        // U6: all chrome fades while drawing (removed from composition when hidden).
+        AnimatedVisibility(visible = vm.uiVisible, enter = fadeIn(tween(150)), exit = fadeOut(tween(150))) {
+            FloatingToolPanel(vm, containerW, containerH, onOpenColor = { panel = PanelType.COLOR })
+        }
 
         // U5: top action pill (undo/redo/layers/menu). Settings arrives with U9;
         // My worlds / New world / Places arrive with U12 / U18 (noted in PROGRESS.md).
-        TopActionPill(
-            vm = vm,
-            layersOpen = panel == PanelType.LAYERS,
-            onUndo = { vm.undo() },
-            onRedo = { vm.redo() },
-            onToggleLayers = { panel = if (panel == PanelType.LAYERS) null else PanelType.LAYERS },
-            onInsertImage = { imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-            onPaper = { panel = if (panel == PanelType.PAPER) null else PanelType.PAPER },
-            onExportPicture = {
-                vm.exportPng(vm.viewW.takeIf { it > 0 } ?: 1440, vm.viewH.takeIf { it > 0 } ?: 2304) { path ->
-                    android.widget.Toast.makeText(context,
-                        if (path != null) "Picture saved" else "Export failed",
-                        android.widget.Toast.LENGTH_SHORT).show()
-                }
-            },
-            onExportWorldFile = { uzwExport.launch("${vm.project.name}.uzw") },
-            onImportWorldFile = { uzwImport.launch(arrayOf("*/*")) },
+        AnimatedVisibility(
+            visible = vm.uiVisible,
+            enter = fadeIn(tween(150)), exit = fadeOut(tween(150)),
             modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp),
-        )
+        ) {
+            TopActionPill(
+                vm = vm,
+                layersOpen = panel == PanelType.LAYERS,
+                onUndo = { vm.undo() },
+                onRedo = { vm.redo() },
+                onToggleLayers = { panel = if (panel == PanelType.LAYERS) null else PanelType.LAYERS },
+                onInsertImage = { imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                onPaper = { panel = if (panel == PanelType.PAPER) null else PanelType.PAPER },
+                onExportPicture = {
+                    vm.exportPng(vm.viewW.takeIf { it > 0 } ?: 1440, vm.viewH.takeIf { it > 0 } ?: 2304) { path ->
+                        android.widget.Toast.makeText(context,
+                            if (path != null) "Picture saved" else "Export failed",
+                            android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onExportWorldFile = { uzwExport.launch("${vm.project.name}.uzw") },
+                onImportWorldFile = { uzwImport.launch(arrayOf("*/*")) },
+            )
+        }
+
+        // U6: zoom indicator at the bottom center (self-managed visibility).
+        ZoomChip(vm, Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp))
+
+        // U6: first-run hint — any tap or 6 seconds dismisses it.
+        if (vm.hintVisible) {
+            FirstRunHint(
+                onDismiss = { vm.dismissHint() },
+                modifier = Modifier.align(Alignment.Center),
+            )
+        }
+        LaunchedEffect(vm.hintVisible) {
+            if (vm.hintVisible) { kotlinx.coroutines.delay(6000); vm.dismissHint() }
+        }
 
         // Right panel
-        panel?.let { p ->
-            Card(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .padding(8.dp)
-                    .width(280.dp),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                when (p) {
-                    PanelType.COLOR -> ColorPickerPanel(vm)
-                    PanelType.BRUSH -> BrushSettingsPanel(vm)
-                    PanelType.LAYERS -> LayersPanel(vm)
-                    PanelType.PAPER -> PaperPanel(vm)
-                    PanelType.SELECTION -> SelectionPanel(vm)
+        AnimatedVisibility(
+            visible = vm.uiVisible,
+            enter = fadeIn(tween(150)), exit = fadeOut(tween(150)),
+            modifier = Modifier.align(Alignment.CenterEnd).padding(8.dp),
+        ) {
+            panel?.let { p ->
+                Card(
+                    modifier = Modifier.width(280.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    when (p) {
+                        PanelType.COLOR -> ColorPickerPanel(vm)
+                        PanelType.BRUSH -> BrushSettingsPanel(vm)
+                        PanelType.LAYERS -> LayersPanel(vm)
+                        PanelType.PAPER -> PaperPanel(vm)
+                        PanelType.SELECTION -> SelectionPanel(vm)
+                    }
                 }
             }
         }
