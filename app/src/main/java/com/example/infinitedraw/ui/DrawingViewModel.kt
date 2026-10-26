@@ -54,7 +54,8 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
 
     var brushType = BrushType.PEN
     var brushSizePx = 6f
-    var color: Int = android.graphics.Color.BLACK
+    // U7: reactive so the panel color circle / flyout preview / hex update live.
+    var color by mutableStateOf(android.graphics.Color.BLACK)
     /** U1: debug overlay (level/zoom/rot) hidden by default; Settings (U9) will expose it. */
     var showDebug = false
     val recentColors = mutableListOf<Int>()

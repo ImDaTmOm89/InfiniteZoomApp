@@ -269,8 +269,8 @@ Last updated: 2026-10-26 (on-device test session complete — 10 bugs found & fi
 From here on the UI_MASTER_PLAN.md Part 2 rules govern UI work (one step at a time,
 STOP after each, git read-only unless the owner asks for a commit).
 
-CURRENT STEP: U6 - Auto-hiding chrome, zoom indicator, first-run hint - DONE (partial agent-verified; auto-hide + ZoomChip need the pen/pinch)
-NEXT ACTION: on "go" build Step U7 (color panel redesign).
+CURRENT STEP: U7 - Color panel redesign - DONE (agent-verified on device)
+NEXT ACTION: on "go" build Step U8 (layers panel redesign).
 
 - Step U1 - Theme and full-screen immersive mode — WAITING FOR OWNER TEST
   (ui/theme/Color.kt + Theme.kt with the design tokens; edge-to-edge + hidden
@@ -345,7 +345,25 @@ NEXT ACTION: on "go" build Step U7 (color panel redesign).
   NOT adb-testable (need stylus/pinch): controls fading during a pen stroke +
   returning 0.6s later, and the ZoomChip appearing during a pinch — those are
   the owner's MY TEST items. Zero crashes.)
-- Step U7 - Color panel redesign — NOT STARTED
+- Step U7 - Color panel redesign — DONE (agent-verified)
+  (ui/panels/ColorPickerPanel.kt fully rebuilt: own 300dp PanelSurface; 56dp
+  rounded preview over an 8dp two-grey checkerboard (transparency visible) +
+  live hex (#RRGGBB, with % when opacity < 100) + CLOSE icon top-right; four
+  GradientSliders with SectionTitles: Hue (7 rainbow stops), Saturation
+  (white -> hue), Brightness (black -> hue), Opacity (transparent -> color);
+  Recent (vm.recentColors, hidden while empty) + Basics (8 presets) as 32dp
+  circles, 6dp gaps, 2dp accent ring on the selected. vm.color is now
+  reactive (mutableStateOf) so the tool panel's color circle and the flyout
+  preview update live. The panel is positioned beside the floating tool panel
+  with the same math as the flyout (opposite side from the snapped edge),
+  rendered from FloatingToolPanel(colorPanelOpen, onCloseColor); opening it
+  closes the flyout; the old right-side Card no longer hosts COLOR. Agent-
+  verified on the tablet: panel renders exactly per spec (vision-confirmed
+  gradients + checkerboard), tapping the blue Basics swatch moved the hex
+  #000000 -> #2196F3, dragging the hue slider moved it to #7821F3, the tool
+  panel's color circle and preview all matched the live color, and the X
+  closed the panel cleanly. Recent filling in as you draw needs the pen
+  (mechanism unchanged from the old panel: endStroke). Zero crashes.)
 - Step U8 - Layers panel redesign — NOT STARTED
 - Step U9 - Settings panel and canvas-first polish — NOT STARTED
 - Step U10 - S Pen extras (optional) — NOT STARTED

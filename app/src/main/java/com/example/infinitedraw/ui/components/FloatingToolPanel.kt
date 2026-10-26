@@ -64,6 +64,8 @@ fun FloatingToolPanel(
     containerW: Int,
     containerH: Int,
     onOpenColor: () -> Unit,
+    colorPanelOpen: Boolean,
+    onCloseColor: () -> Unit,
 ) {
     val density = LocalDensity.current
     val marginPx = with(density) { 12.dp.toPx() }
@@ -181,6 +183,19 @@ fun FloatingToolPanel(
                     }
                 }
             }
+        }
+    }
+
+    // U7: the color panel sits beside the tool panel, same math as the flyout.
+    if (colorPanelOpen) {
+        val cpGap = with(density) { 8.dp.toPx() }
+        val cpW = with(density) { 300.dp.toPx() }
+        val cpX = if (offsetX + panelSize.width / 2f < containerW / 2f)
+            offsetX + panelSize.width + cpGap
+        else
+            offsetX - cpW - cpGap
+        Box(Modifier.offset { IntOffset(cpX.roundToInt(), offsetY.roundToInt()) }) {
+            com.example.infinitedraw.ui.panels.ColorPickerPanel(vm, onCloseColor)
         }
     }
 

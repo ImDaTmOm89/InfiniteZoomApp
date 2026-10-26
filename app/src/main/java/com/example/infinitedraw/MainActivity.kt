@@ -150,7 +150,12 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
         // U4: the floating tool panel replaces the old left strip + size slider.
         // U6: all chrome fades while drawing (removed from composition when hidden).
         AnimatedVisibility(visible = vm.uiVisible, enter = fadeIn(tween(150)), exit = fadeOut(tween(150))) {
-            FloatingToolPanel(vm, containerW, containerH, onOpenColor = { panel = PanelType.COLOR })
+            FloatingToolPanel(
+                vm, containerW, containerH,
+                onOpenColor = { vm.flyoutOpen = false; panel = PanelType.COLOR },
+                colorPanelOpen = panel == PanelType.COLOR,
+                onCloseColor = { panel = null },
+            )
         }
 
         // U5: top action pill (undo/redo/layers/menu). Settings arrives with U9;
@@ -206,7 +211,7 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     when (p) {
-                        PanelType.COLOR -> ColorPickerPanel(vm)
+                        PanelType.COLOR -> {}   // U7: the color panel now floats beside the tool panel
                         PanelType.BRUSH -> BrushSettingsPanel(vm)
                         PanelType.LAYERS -> LayersPanel(vm)
                         PanelType.PAPER -> PaperPanel(vm)
