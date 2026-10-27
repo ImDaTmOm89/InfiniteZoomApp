@@ -28,6 +28,15 @@ class CanvasRenderer {
     fun render(canvas: Canvas, vm: DrawingViewModel, w: Int, h: Int, debug: Boolean = true) {
         drawPaper(canvas, vm, w, h)
         renderWorld(canvas, vm, w, h)
+        // U10: hover preview — a thin circle the size of the brush under the pen tip.
+        vm.hover?.let { (hx, hy) ->
+            paint.style = Paint.Style.STROKE
+            paint.maskFilter = null
+            paint.alpha = 255
+            paint.color = Color.argb(90, 128, 128, 128)
+            paint.strokeWidth = 2f
+            canvas.drawCircle(hx, hy, vm.brushSizePx / 2f, paint)
+        }
         val cam = vm.engine.camera
         // U1: debug text shows only when the renderer allows it AND vm.showDebug is on.
         if (!debug || !vm.showDebug) return

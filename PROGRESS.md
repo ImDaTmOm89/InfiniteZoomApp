@@ -269,8 +269,8 @@ Last updated: 2026-10-26 (on-device test session complete — 10 bugs found & fi
 From here on the UI_MASTER_PLAN.md Part 2 rules govern UI work (one step at a time,
 STOP after each, git read-only unless the owner asks for a commit).
 
-CURRENT STEP: U9 - Settings panel and canvas-first polish - DONE (agent-verified on device)
-NEXT ACTION: on "go" build Step U10 (S Pen extras, optional).
+CURRENT STEP: U10 - S Pen extras (optional) - DONE (code-complete; pen behaviors are owner tests)
+NEXT ACTION: on "go" begin the exploration phase (Step U11 - Places).
 
 - Step U1 - Theme and full-screen immersive mode — WAITING FOR OWNER TEST
   (ui/theme/Color.kt + Theme.kt with the design tokens; edge-to-edge + hidden
@@ -431,7 +431,28 @@ NEXT ACTION: on "go" build Step U10 (S Pen extras, optional).
   rotation used settings put user_rotation (auto-rotate restored to 1 after).
   Pen-only owner tests: auto-hide-off while pen-drawing, ZoomChip switch
   during a pinch. Zero crashes.)
-- Step U10 - S Pen extras (optional) — NOT STARTED
+- Step U10 - S Pen extras (optional) — DONE (code-complete; pen behaviors owner-tested)
+  (The plan's overrideTool design: DrawingView.startDraw sets
+  vm.overrideTool = RERASER/ERASER when the pen's eraser end touches OR the S Pen
+  side button (BUTTON_STYLUS_PRIMARY) is held at DOWN; beginStroke captures it
+  into strokeTool and consumes it; the whole stroke lifecycle (beginStroke/
+  addPoint/endStroke: SELECT checks, smoothing decision, raster dab vs erase
+  branches, vector-stroke creation, pressure flags) now reads strokeTool, so
+  the override applies for exactly one stroke; endStroke/cancelStroke reset
+  strokeTool = tool and clear overrideTool. The old eraserMode/rasterEraserMode/
+  preEraserTool mechanism (which visibly swapped vm.tool, making the panel
+  show the eraser mid-stroke) was removed — the panel keeps showing the real
+  selected tool per the plan. Hover (optional extra): DrawingView.onHoverEvent
+  feeds vm.hover (screen px); CanvasRenderer.render draws a thin 2px circle
+  outline (90-alpha gray) with diameter brushSizePx at the hover point. Agent-
+  verified on the tablet: finger drawing regression through the new lifecycle
+  (logcat-proven: beginStroke t=PEN layer=Layer 2 -> endStroke with 80 points
+  committed), app stable, zero crashes. adb cannot inject stylus events, so
+  the three pen behaviors are owner tests: (1) hold the S Pen side button and
+  draw — that stroke erases and the tool strip still shows the pen; (2) flip
+  the pen to its eraser end and draw — erases (raster eraser if a raster tool
+  is active); (3) hover the pen above the glass — a thin circle the size of
+  the brush follows the tip.)
 - Step U11 - Places: naming levels, place card, breadcrumb — NOT STARTED
 - Step U12 - Fly-to and history — NOT STARTED
 - Step U13 - Search — NOT STARTED

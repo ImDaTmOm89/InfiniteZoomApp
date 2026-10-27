@@ -184,19 +184,15 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     private var lastRawX = 0f; private var lastRawY = 0f; private var lastRawP = 1f
     private var haveFirstPoint = false
     private var smoothingActive = false
-    private var preEraserTool = Tool.PEN   // tool to restore after hardware eraser lifts
-    var eraserMode: Boolean
-        get() = tool == Tool.ERASER
-        set(v) {   // hardware eraser toggle (vector tools)
-            if (v) { preEraserTool = if (tool.isRaster()) Tool.PEN else tool; tool = Tool.ERASER }
-            else tool = preEraserTool
-        }
-    var rasterEraserMode: Boolean
-        get() = tool == Tool.RERASER
-        set(v) {   // hardware eraser in raster tools
-            if (v) { preEraserTool = if (!tool.isRaster() && tool != Tool.ERASER) tool else Tool.OIL; tool = Tool.RERASER }
-            else tool = preEraserTool
-        }
+    // ---- U10: S Pen extras ----
+    /** One-stroke tool override (S Pen side button / eraser end). DrawingView sets
+     *  it right before beginStroke; beginStroke consumes it; endStroke/cancelStroke
+     *  clear any leftover. vm.tool — what the panel shows — is never touched. */
+    var overrideTool: Tool? = null
+    /** The tool actually used by the stroke in progress (captured at beginStroke). */
+    private var strokeTool: Tool = Tool.PEN
+    /** U10 hover: screen-space pen position while hovering, or null when not hovering. */
+    var hover: Pair<Float, Float>? = null
     var tool: Tool by androidx.compose.runtime.mutableStateOf(Tool.PEN)   // active tool; ERASER clears strokes
     val pendingRemoved = mutableListOf<Stroke>()   // strokes marked by the eraser, hidden until commit
 
@@ -365,9 +361,14 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         flyoutOpen = false   // U4: the flyout closes the moment a stroke begins
         if (autoHideUi) uiVisible = false    // U6/U9: hide chrome while drawing unless Settings disabled it
         uiShowJob?.cancel()
+        // U10: the S Pen side button / eraser end override the tool for THIS stroke
+        // only; vm.tool (what the panel shows) stays the real selected tool.
+        val t = overrideTool ?: tool
+        strokeTool = t
+        overrideTool = null
         // Step 21: SELECT runs its own gesture and creates no stroke. It works
         // regardless of the active layer state (the hit test filters layers itself).
-        if (tool == Tool.SELECT) { selectBegin(sx, sy, w, h); redraw?.invoke(); return }
+        if (t == Tool.SELECT) { selectBegin(sx, sy, w, h); redraw?.invoke(); return }
         // Plan Step 10: the active layer must be visible and unlocked to draw.
         val layer = activeLayer()
         if (layer == null || !layer.visible || layer.locked) {
@@ -387,22 +388,22 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         pendingRemoved.clear()
         rasterBefore.clear()
         // Step 20: smoothing is applied to PEN/MARKER/AIRBRUSH only (eraser + raster exempt).
-        smoothingActive = !tool.isRaster() && tool != Tool.ERASER
+        smoothingActive = !t.isRaster() && t != Tool.ERASER
         haveFirstPoint = false
         if (smoothingActive) {
             lastRawX = sx; lastRawY = sy; lastRawP = p
             haveFirstPoint = true
         }
-        if (tool.isRaster()) {
+        if (t.isRaster()) {
             rasterDab(l[0].toFloat(), l[1].toFloat(), p)
-        } else if (tool == Tool.ERASER) {
+        } else if (t == Tool.ERASER) {
             eraseAt(l[0].toFloat(), l[1].toFloat())
         }
         redraw?.invoke()
     }
 
     fun addPoint(sx: Float, sy: Float, p: Float, w: Int, h: Int) {
-        if (tool == Tool.SELECT) { selectMove(sx, sy, w, h); return }
+        if (strokeTool == Tool.SELECT) { selectMove(sx, sy, w, h); return }
         val a = active ?: return
         var sx = sx; var sy = sy; var p = p
         if (smoothingActive && haveFirstPoint) {
@@ -420,9 +421,9 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         val minDist = 1.5 / engine.camera.zoom
         if (dx * dx + dy * dy < minDist * minDist) return
         a.add(StrokePoint(l[0].toFloat(), l[1].toFloat(), p))
-        if (tool.isRaster()) {
+        if (strokeTool.isRaster()) {
             rasterDab(l[0].toFloat(), l[1].toFloat(), p)
-        } else if (tool == Tool.ERASER) {
+        } else if (strokeTool == Tool.ERASER) {
             eraseAt(l[0].toFloat(), l[1].toFloat())
         }
         redraw?.invoke()
@@ -462,7 +463,7 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
 
     fun endStroke() {
         scheduleShowUi()   // U6: chrome returns 600 ms after the last gesture ends
-        if (tool == Tool.SELECT) { selectEnd(w0, h0); return }
+        if (strokeTool == Tool.SELECT) { selectEnd(w0, h0); strokeTool = tool; overrideTool = null; return }
         val a = active; val lvl = activeLevel
         active = null
         if (a != null && lvl != null && a.isNotEmpty()) {
@@ -475,8 +476,8 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             // Eraser and raster tools never create vector strokes.
-            if (tool != Tool.ERASER && !tool.isRaster()) {
-                val type = when (tool) {
+            if (strokeTool != Tool.ERASER && !strokeTool.isRaster()) {
+                val type = when (strokeTool) {
                     Tool.MARKER -> BrushType.MARKER
                     Tool.AIRBRUSH -> BrushType.AIRBRUSH
                     Tool.PENCIL -> BrushType.PENCIL
@@ -488,7 +489,7 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
                     type,
                     color,   // marker/airbrush alpha is applied at render time
                     brushSizePx / engine.camera.zoom.toFloat(),
-                    usePressure && (tool == Tool.PEN || tool == Tool.PENCIL || tool == Tool.CHARCOAL), a.toList()
+                    usePressure && (strokeTool == Tool.PEN || strokeTool == Tool.PENCIL || strokeTool == Tool.CHARCOAL), a.toList()
                 )
                 commands.exec(AddStroke(lvl.id, stroke), engine, project)
                 autosave.schedule()
@@ -515,11 +516,13 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
             autosave.schedule()   // flush raster tiles to PNGs
         }
         redraw?.invoke()
+        strokeTool = tool   // U10: the override lived for one stroke only
+        overrideTool = null
     }
 
     fun cancelStroke() {
         scheduleShowUi()   // U6
-        if (tool == Tool.SELECT) { selectCancel(); return }
+        if (strokeTool == Tool.SELECT) { selectCancel(); strokeTool = tool; overrideTool = null; return }
         active = null; pendingRemoved.clear()
         // Cancelled raster stroke: roll tiles back to the pre-stroke state.
         if (rasterBefore.isNotEmpty()) {
@@ -527,6 +530,8 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
             rasterBefore.clear()
         }
         redraw?.invoke()
+        strokeTool = tool   // U10: the override lived for one stroke only
+        overrideTool = null
     }
 
     /**

@@ -4,9 +4,10 @@ import android.graphics.Canvas
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
-import com.example.infinitedraw.ui.isRaster
 import com.example.infinitedraw.render.CanvasRenderer
 import com.example.infinitedraw.ui.DrawingViewModel
+import com.example.infinitedraw.ui.Tool
+import com.example.infinitedraw.ui.isRaster
 import kotlin.math.hypot
 import kotlin.math.pow
 
@@ -43,12 +44,11 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
     }
     private fun startDraw(e: MotionEvent, i: Int) {
         mode = Mode.DRAW
-        if (isEraserTool(e, i)) {
-            // Hardware eraser: pick the raster eraser if a raster tool is active,
-            // otherwise the vector eraser (vm.eraserMode). The setters remember
-            // which tool to return to when the eraser tip lifts.
-            if (vm.tool.isRaster()) vm.rasterEraserMode = true else vm.eraserMode = true
-        }
+        // U10: the S Pen side button held, or the pen flipped to its eraser end —
+        // erase for THIS stroke only (the raster eraser when a raster tool is
+        // active). vm.tool keeps showing the real selected tool.
+        if (isEraserTool(e, i) || (e.buttonState and MotionEvent.BUTTON_STYLUS_PRIMARY) != 0)
+            vm.overrideTool = if (vm.tool.isRaster()) Tool.RERASER else Tool.ERASER
         vm.beginStroke(e.getX(i), e.getY(i), e.getPressure(i), width, height)
     }
     private fun startNavigate(e: MotionEvent) {
@@ -112,6 +112,18 @@ class DrawingView(ctx: Context, private val vm: DrawingViewModel) : View(ctx) {
             }
         }
         invalidate()
+        return true
+    }
+
+    /** U10 (optional): hovering the pen shows a thin circle the size of the brush. */
+    override fun onHoverEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_HOVER_MOVE, MotionEvent.ACTION_HOVER_ENTER ->
+                vm.hover = e.x to e.y
+            else ->   // HOVER_EXIT (pen touched or left range) and anything else
+                vm.hover = null
+        }
+        vm.redraw?.invoke()
         return true
     }
 
