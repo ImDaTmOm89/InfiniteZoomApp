@@ -54,6 +54,8 @@ import com.example.infinitedraw.ui.panels.ColorPickerPanel
 import com.example.infinitedraw.ui.panels.LayersPanel
 import com.example.infinitedraw.ui.panels.PaperPanel
 import com.example.infinitedraw.ui.panels.SelectionPanel
+import com.example.infinitedraw.ui.panels.SettingsPanel
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.example.infinitedraw.storage.ProjectStorage
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
@@ -61,7 +63,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 
-enum class PanelType { COLOR, BRUSH, LAYERS, PAPER, SELECTION }
+enum class PanelType { COLOR, BRUSH, LAYERS, PAPER, SELECTION, SETTINGS }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,7 +86,8 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainScreen(vm: DrawingViewModel = viewModel()) {
-    var panel by remember { mutableStateOf<PanelType?>(null) }
+    // U9: rememberSaveable so the open panel survives rotation (checklist #5).
+    var panel by rememberSaveable { mutableStateOf<PanelType?>(null) }
     var viewW by remember { mutableStateOf(1080) }
     var viewH by remember { mutableStateOf(1920) }
     val context = LocalContext.current
@@ -168,9 +171,11 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
             TopActionPill(
                 vm = vm,
                 layersOpen = panel == PanelType.LAYERS,
+                settingsOpen = panel == PanelType.SETTINGS,
                 onUndo = { vm.undo() },
                 onRedo = { vm.redo() },
                 onToggleLayers = { panel = if (panel == PanelType.LAYERS) null else PanelType.LAYERS },
+                onToggleSettings = { panel = if (panel == PanelType.SETTINGS) null else PanelType.SETTINGS },
                 onInsertImage = { imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                 onPaper = { panel = if (panel == PanelType.PAPER) null else PanelType.PAPER },
                 onExportPicture = {
@@ -186,7 +191,10 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
         }
 
         // U6: zoom indicator at the bottom center (self-managed visibility).
-        ZoomChip(vm, Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp))
+        // U6: the zoom chip hides for good when Settings turns it off.
+        if (vm.showZoomChip) {
+            ZoomChip(vm, Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp))
+        }
 
         // U6: first-run hint — any tap or 6 seconds dismisses it.
         if (vm.hintVisible) {
@@ -209,13 +217,15 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
                 when (p) {
                     // U8: the layers panel has its own PanelSurface — no Card wrap.
                     PanelType.LAYERS -> LayersPanel(vm)
+                    // U9: the settings panel, same floating style.
+                    PanelType.SETTINGS -> SettingsPanel(vm)
                     PanelType.COLOR -> {}   // U7: the color panel floats beside the tool panel
                     else -> Card(
                         modifier = Modifier.width(280.dp),
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         when (p) {
-                            PanelType.COLOR, PanelType.LAYERS -> {}
+                            PanelType.COLOR, PanelType.LAYERS, PanelType.SETTINGS -> {}
                             PanelType.BRUSH -> BrushSettingsPanel(vm)
                             PanelType.PAPER -> PaperPanel(vm)
                             PanelType.SELECTION -> SelectionPanel(vm)

@@ -45,7 +45,6 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     val project = Project("Untitled", mutableListOf(Layer(1, "Layer 1")))
     val commands = UndoStack()
     val autosave = Autosave(app, project, engine)
-    var fingerDraws = false
     var redraw: (() -> Unit)? = null
     // Testing fix: real view size, set by DrawingView.onSizeChanged. Compose's
     // AndroidView.update fires pre-layout with 0 and may never re-run.
@@ -56,8 +55,7 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     var brushSizePx = 6f
     // U7: reactive so the panel color circle / flyout preview / hex update live.
     var color by mutableStateOf(android.graphics.Color.BLACK)
-    /** U1: debug overlay (level/zoom/rot) hidden by default; Settings (U9) will expose it. */
-    var showDebug = false
+    /** U1: debug overlay (level/zoom/rot); exposed + persisted by Settings (U9). */
     val recentColors = mutableListOf<Int>()
     // Testing fix: reactive so the Layers panel recomposes on selection change.
     private var _activeLayerId by mutableStateOf(1L)
@@ -69,7 +67,6 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     var layersVersion by mutableStateOf(0)
         private set
     private fun bumpLayers() { layersVersion++; autosave.schedule() }   // also persists across force-stops
-    var usePressure = true
 
     // ---- Step 20: stroke smoothing + pressure curve (persisted in SharedPreferences("settings")) ----
     var stabilizer: Float = 0.3f
@@ -84,6 +81,41 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         }
     private fun prefs() =
         getApplication<Application>().getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+
+    // ---- U9: settings (all persisted in SharedPreferences("settings"), reactive for the panel) ----
+    private var _fingerDraws by mutableStateOf(false)
+    var fingerDraws: Boolean
+        get() = _fingerDraws
+        set(value) { _fingerDraws = value; prefs().edit().putBoolean("fingerDraws", value).apply() }
+
+    private var _usePressure by mutableStateOf(true)
+    var usePressure: Boolean
+        get() = _usePressure
+        set(value) { _usePressure = value; prefs().edit().putBoolean("usePressure", value).apply() }
+
+    private var _showDebug by mutableStateOf(false)
+    var showDebug: Boolean
+        get() = _showDebug
+        set(value) { _showDebug = value; prefs().edit().putBoolean("showDebug", value).apply(); redraw?.invoke() }
+
+    private var _autoHideUi by mutableStateOf(true)
+    var autoHideUi: Boolean
+        get() = _autoHideUi
+        set(value) {
+            _autoHideUi = value; prefs().edit().putBoolean("autoHideUi", value).apply()
+            if (!value) { uiShowJob?.cancel(); uiVisible = true }
+        }
+
+    private var _showZoomChip by mutableStateOf(true)
+    var showZoomChip: Boolean
+        get() = _showZoomChip
+        set(value) { _showZoomChip = value; prefs().edit().putBoolean("showZoomChip", value).apply() }
+
+    /** U9: Settings > Reset tool panel position (the plan's default spot). */
+    fun resetPanelPosition() {
+        panelFracX = 0f; panelFracY = 0.25f; panelCollapsed = false
+        savePanelPrefs()
+    }
 
     // ---- U4: floating tool panel state (declared before init reads them) ----
     var panelFracX by mutableStateOf(0f)        // 0 = left edge, 1 = right edge (of free space)
@@ -132,6 +164,12 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         val sp = prefs()
         stabilizer = sp.getFloat("stabilizer", 0.3f)
         pressureGamma = sp.getFloat("pressureGamma", 1.0f)
+        // U9: settings survive restarts.
+        _fingerDraws = sp.getBoolean("fingerDraws", false)
+        _usePressure = sp.getBoolean("usePressure", true)
+        _showDebug = sp.getBoolean("showDebug", false)
+        _autoHideUi = sp.getBoolean("autoHideUi", true)
+        _showZoomChip = sp.getBoolean("showZoomChip", true)
         // U4: floating tool panel position (fractions of free space) + collapse state.
         val up = uiPrefs()
         panelFracX = up.getFloat("panelFracX", 0f)
@@ -325,7 +363,7 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     fun beginStroke(sx: Float, sy: Float, p: Float, w: Int, h: Int) {
         w0 = w; h0 = h
         flyoutOpen = false   // U4: the flyout closes the moment a stroke begins
-        uiVisible = false    // U6: hide chrome while drawing; a new stroke cancels the show-timer
+        if (autoHideUi) uiVisible = false    // U6/U9: hide chrome while drawing unless Settings disabled it
         uiShowJob?.cancel()
         // Step 21: SELECT runs its own gesture and creates no stroke. It works
         // regardless of the active layer state (the hit test filters layers itself).

@@ -269,8 +269,8 @@ Last updated: 2026-10-26 (on-device test session complete — 10 bugs found & fi
 From here on the UI_MASTER_PLAN.md Part 2 rules govern UI work (one step at a time,
 STOP after each, git read-only unless the owner asks for a commit).
 
-CURRENT STEP: U8 - Layers panel redesign - DONE (agent-verified on device)
-NEXT ACTION: on "go" build Step U9 (settings panel and canvas-first polish).
+CURRENT STEP: U9 - Settings panel and canvas-first polish - DONE (agent-verified on device)
+NEXT ACTION: on "go" build Step U10 (S Pen extras, optional).
 
 - Step U1 - Theme and full-screen immersive mode — WAITING FOR OWNER TEST
   (ui/theme/Color.kt + Theme.kt with the design tokens; edge-to-edge + hidden
@@ -403,7 +403,34 @@ NEXT ACTION: on "go" build Step U9 (settings panel and canvas-first polish).
   state — not a bug). Owner's project restored to [Layer 1, Layer 2] with
   Normal blend and opacity 98% (was 23% before testing; strokes intact).
   Zero crashes.)
-- Step U9 - Settings panel and canvas-first polish — NOT STARTED
+- Step U9 - Settings panel and canvas-first polish — DONE (agent-verified)
+  (NEW ui/panels/SettingsPanel.kt: 300dp PanelSurface with SectionTitle +
+  five 48dp-high switch rows — Finger draws, Pressure sensitivity, Auto-hide
+  controls while drawing, Show zoom indicator, Show debug text — plus a
+  Reset-tool-panel-position button (fracX=0, fracY=0.25, expanded). VM: those
+  five became reactive + persisted in SharedPreferences("settings") with an
+  init reload (fingerDraws/usePressure/showDebug moved into the block);
+  showDebug's setter redraws the canvas; turning autoHideUi off cancels the
+  show-timer and forces uiVisible=true; beginStroke hides chrome only when
+  autoHideUi; MainScreen gates the ZoomChip on showZoomChip; panel state is
+  rememberSaveable so an open panel survives rotation. TopActionPill gained
+  the SETTINGS gear between LAYERS and MENU (icon already existed); PanelType
+  gained SETTINGS (own PanelSurface slot, no Card). Polish checklist: color
+  panel close button 32dp -> 48dp (rule 1); no text under 12sp (rule 2);
+  panels are overlays so the canvas never moves (rule 3); panel dragged by
+  its handle to the right edge live + left edge via Reset, on-screen in both
+  orientations (rule 4); open Settings panel survived a forced rotation both
+  ways and the tool panel kept its spot (rule 5, rememberSaveable + persisted
+  fracs); Settings->Layers swap verified one-panel-at-a-time with the tool
+  panel staying (rule 6); dialogs unchanged-dark (rule 7). Agent-verified on
+  the tablet: switch defaults render correctly, Show debug text toggles the
+  level/zoom/rot overlay on/off instantly, Finger draws ON makes a finger
+  swipe lay down a real PEN stroke (seen in project.json) and OFF stops it,
+  all five settings survived force-stop+relaunch, Reset jumped the tool panel
+  right->left edge, the handle drag moved it back to the right edge. Forced
+  rotation used settings put user_rotation (auto-rotate restored to 1 after).
+  Pen-only owner tests: auto-hide-off while pen-drawing, ZoomChip switch
+  during a pinch. Zero crashes.)
 - Step U10 - S Pen extras (optional) — NOT STARTED
 - Step U11 - Places: naming levels, place card, breadcrumb — NOT STARTED
 - Step U12 - Fly-to and history — NOT STARTED

@@ -26,9 +26,11 @@ import com.example.infinitedraw.ui.theme.textPrimary
 fun TopActionPill(
     vm: DrawingViewModel,
     layersOpen: Boolean,
+    settingsOpen: Boolean,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
     onToggleLayers: () -> Unit,
+    onToggleSettings: () -> Unit,
     onInsertImage: () -> Unit,
     onPaper: () -> Unit,
     onExportPicture: () -> Unit,
@@ -46,6 +48,8 @@ fun TopActionPill(
                 enabled = vm.canRedo, onClick = onRedo)
             ToolButton(icon = UiIcon.LAYERS, label = "Layers", selected = layersOpen,
                 onClick = onToggleLayers)
+            ToolButton(icon = UiIcon.SETTINGS, label = "Settings", selected = settingsOpen,
+                onClick = onToggleSettings)
             androidx.compose.foundation.layout.Box {
                 ToolButton(icon = UiIcon.MENU, label = "Menu", selected = menuOpen,
                     onClick = { menuOpen = true })

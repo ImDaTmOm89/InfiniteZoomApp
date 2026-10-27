@@ -117,7 +117,8 @@ fun ColorPickerPanel(vm: DrawingViewModel, onClose: () -> Unit) {
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(hexLabel, fontSize = 12.sp, color = textPrimary)
                     Box(
-                        Modifier.size(32.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onClose),
+                        // U9 checklist: 48dp touch target (was 32dp).
+                        Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onClose),
                         contentAlignment = Alignment.Center,
                     ) {
                         UiIcon(icon = UiIcon.CLOSE, tint = textPrimary, contentDescription = "Close color panel")
