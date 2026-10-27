@@ -269,8 +269,8 @@ Last updated: 2026-10-26 (on-device test session complete — 10 bugs found & fi
 From here on the UI_MASTER_PLAN.md Part 2 rules govern UI work (one step at a time,
 STOP after each, git read-only unless the owner asks for a commit).
 
-CURRENT STEP: U7 - Color panel redesign - DONE (agent-verified on device)
-NEXT ACTION: on "go" build Step U8 (layers panel redesign).
+CURRENT STEP: U8 - Layers panel redesign - DONE (agent-verified on device)
+NEXT ACTION: on "go" build Step U9 (settings panel and canvas-first polish).
 
 - Step U1 - Theme and full-screen immersive mode — WAITING FOR OWNER TEST
   (ui/theme/Color.kt + Theme.kt with the design tokens; edge-to-edge + hidden
@@ -364,7 +364,45 @@ NEXT ACTION: on "go" build Step U8 (layers panel redesign).
   panel's color circle and preview all matched the live color, and the X
   closed the panel cleanly. Recent filling in as you draw needs the pen
   (mechanism unchanged from the old panel: endStroke). Zero crashes.)
-- Step U8 - Layers panel redesign — NOT STARTED
+- Step U8 - Layers panel redesign — DONE (agent-verified)
+  (ui/panels/LayersPanel.kt rebuilt: own 300dp PanelSurface, rows area capped
+  at 60% of screen height and scrollable; 56dp rows with eye + lock
+  ToolButtons, name (tap = active, long-press = rename dialog) with a 2dp
+  accent outline + accentSoft background on the active row, an opacity %
+  readout on the right that expands one row at a time into the opacity slider
+  + blend dropdown; footer ToolButtons: PLUS add, TRASH delete (confirm
+  dialog only when the active layer has strokes), CHEVRON_RIGHT rotated
+  -90/+90 for move up/down. MainScreen renders LAYERS outside the old Card.
+  THREE real bugs found and fixed during on-device testing:
+  (1) PRE-EXISTING engine bug: DrawingViewModel's layer-id counter was
+  hard-coded and reset on relaunch, so addLayer() after a restart re-issued
+  an existing id (project.json got two layers with id 2 — the panel dropped a
+  row and both rows looked active). Fixed by deriving ids from the project
+  itself (Project.nextLayerId(), model layer) + LayerIdTest regression test
+  (JVM); the corrupted on-disk project was repaired (duplicate layer removed
+  via sed; the owner's strokes/blend state kept).
+  (2) The spec's LazyColumn misbehaved on this device: asReversed() made it
+  drop rows (fixed with .reversed()), and even with id keys or
+  version-suffixed keys it never re-flowed rows on reorder (moves worked in
+  the engine but the list showed the old order until relaunch). Replaced with
+  a verticalScroll Column + key(layersVersion) full rebuild per edit — the
+  old panel's proven pattern; live reorder/move verified working.
+  (3) The opacity slider drag was killed by that same rebuild: every drag
+  frame disposed the Slider mid-gesture (thumb jumped to the press point,
+  then froze). setLayerOpacity() no longer bumpLayers() during a drag — the
+  canvas still updates live via redraw, the % readout + undoable command
+  land in commitLayerOpacity() on release. Drag verified working end to end.
+  Agent-verified on the tablet: active-row highlight follows taps, eye/lock
+  toggles update live, ADD gives a unique id and appears at the top live,
+  TRASH deletes an empty layer immediately, TRASH on a strokes layer shows
+  the "Delete layer? / This layer has strokes." dialog (Cancel preserves
+  data), move up/down reorders the visible list live, long-press rename
+  dialog works (typed name appears in the row live), blend dropdown offers
+  all 6 modes, opacity drags smoothly. Device testing was done in landscape
+  after the tablet auto-rotated mid-session (activity recreation reset panel
+  state — not a bug). Owner's project restored to [Layer 1, Layer 2] with
+  Normal blend and opacity 98% (was 23% before testing; strokes intact).
+  Zero crashes.)
 - Step U9 - Settings panel and canvas-first polish — NOT STARTED
 - Step U10 - S Pen extras (optional) — NOT STARTED
 - Step U11 - Places: naming levels, place card, breadcrumb — NOT STARTED

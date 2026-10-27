@@ -583,10 +583,11 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---- layer management ----
-    private var nextLayerId = 2L
+    // U8 bugfix: derive the new id from the max existing one — a hard-coded counter
+    // collides with restored projects (duplicate LazyColumn keys dropped a row).
 
     fun addLayer() {
-        val layer = Layer(nextLayerId++, "Layer ${project.layers.size + 1}")
+        val layer = Layer(project.nextLayerId(), "Layer ${project.layers.size + 1}")
         commands.exec(AddLayer(layer, project.layers.size), engine, project)
         activeLayerId = layer.id
         bumpLayers()
@@ -645,7 +646,11 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
             opacityDragStart = propsOf(l)
         }
         l.opacity = opacity.coerceIn(0f, 1f)
-        bumpLayers(); redraw?.invoke()
+        // U8: no bumpLayers() here — rebuilding the rows mid-drag disposed the
+        // Slider and killed the gesture (thumb jumped to the press point, then
+        // froze). The canvas still updates live via redraw; the row's % readout
+        // and the undoable command land in commitLayerOpacity() on release.
+        redraw?.invoke()
     }
 
     fun commitLayerOpacity() {

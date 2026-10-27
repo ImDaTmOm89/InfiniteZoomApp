@@ -206,16 +206,20 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
             modifier = Modifier.align(Alignment.CenterEnd).padding(8.dp),
         ) {
             panel?.let { p ->
-                Card(
-                    modifier = Modifier.width(280.dp),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    when (p) {
-                        PanelType.COLOR -> {}   // U7: the color panel now floats beside the tool panel
-                        PanelType.BRUSH -> BrushSettingsPanel(vm)
-                        PanelType.LAYERS -> LayersPanel(vm)
-                        PanelType.PAPER -> PaperPanel(vm)
-                        PanelType.SELECTION -> SelectionPanel(vm)
+                when (p) {
+                    // U8: the layers panel has its own PanelSurface — no Card wrap.
+                    PanelType.LAYERS -> LayersPanel(vm)
+                    PanelType.COLOR -> {}   // U7: the color panel floats beside the tool panel
+                    else -> Card(
+                        modifier = Modifier.width(280.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        when (p) {
+                            PanelType.COLOR, PanelType.LAYERS -> {}
+                            PanelType.BRUSH -> BrushSettingsPanel(vm)
+                            PanelType.PAPER -> PaperPanel(vm)
+                            PanelType.SELECTION -> SelectionPanel(vm)
+                        }
                     }
                 }
             }
