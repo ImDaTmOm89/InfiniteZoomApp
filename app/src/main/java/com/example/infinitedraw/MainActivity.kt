@@ -11,6 +11,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -29,6 +31,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,8 +43,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlin.math.roundToInt
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.infinitedraw.input.DrawingView
 import com.example.infinitedraw.ui.DrawingViewModel
@@ -49,6 +58,10 @@ import com.example.infinitedraw.ui.components.FloatingToolPanel
 import com.example.infinitedraw.ui.components.TopActionPill
 import com.example.infinitedraw.ui.components.ZoomChip
 import com.example.infinitedraw.ui.components.FirstRunHint
+import com.example.infinitedraw.ui.components.PlaceCard
+import com.example.infinitedraw.ui.components.Breadcrumb
+import com.example.infinitedraw.ui.components.PanelSurface
+import com.example.infinitedraw.ui.theme.textPrimary
 import com.example.infinitedraw.ui.panels.BrushSettingsPanel
 import com.example.infinitedraw.ui.panels.ColorPickerPanel
 import com.example.infinitedraw.ui.panels.LayersPanel
@@ -88,6 +101,13 @@ class MainActivity : ComponentActivity() {
 fun MainScreen(vm: DrawingViewModel = viewModel()) {
     // U9: rememberSaveable so the open panel survives rotation (checklist #5).
     var panel by rememberSaveable { mutableStateOf<PanelType?>(null) }
+    // U11: place UI state.
+    var renamePlace by remember { mutableStateOf(false) }
+    var arrival by remember { mutableStateOf<String?>(null) }
+    var arrivalShownFor by remember { mutableStateOf<Int?>(null) }
+    var nudgeVisible by remember { mutableStateOf(false) }
+    val nudgedLevels = remember { mutableSetOf<Int>() }
+    var lastNudgeAt by remember { mutableStateOf(0L) }
     var viewW by remember { mutableStateOf(1080) }
     var viewH by remember { mutableStateOf(1920) }
     val context = LocalContext.current
@@ -194,6 +214,102 @@ fun MainScreen(vm: DrawingViewModel = viewModel()) {
         // U6: the zoom chip hides for good when Settings turns it off.
         if (vm.showZoomChip) {
             ZoomChip(vm, Modifier.align(Alignment.BottomCenter).padding(bottom = 16.dp))
+        }
+
+        // ---- U11: places ----
+        // Place card + breadcrumb, top-left; hides with the chrome while drawing.
+        AnimatedVisibility(
+            visible = vm.uiVisible,
+            enter = fadeIn(tween(150)), exit = fadeOut(tween(150)),
+            modifier = Modifier.align(Alignment.TopStart).padding(start = 12.dp, top = 12.dp),
+        ) {
+            Column {
+                PlaceCard(vm, onRename = { renamePlace = true })
+                Spacer(Modifier.height(6.dp))
+                Breadcrumb(vm)
+            }
+        }
+
+        // Arrival title: entering a level with a non-empty name shows it big,
+        // centered — fade in 250ms, hold 1500ms, fade out 400ms. Not while drawing.
+        LaunchedEffect(vm.cameraTick) {
+            val lvl = vm.engine.camera.level
+            if (lvl.id != arrivalShownFor) {
+                arrivalShownFor = lvl.id
+                if (lvl.name.isNotBlank() && vm.uiVisible) arrival = lvl.name
+            }
+        }
+        LaunchedEffect(arrival) {
+            if (arrival != null) { kotlinx.coroutines.delay(1750); arrival = null }
+        }
+        AnimatedVisibility(
+            visible = arrival != null,
+            enter = fadeIn(tween(250)), exit = fadeOut(tween(400)),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .offset { IntOffset(0, (containerH * 0.22f).roundToInt()) },
+        ) {
+            Text(
+                arrival ?: "",
+                fontSize = 28.sp,
+                color = textPrimary.copy(alpha = 0.85f),
+            )
+        }
+
+        // Naming nudge: 1.2s in an unnamed level created this session by zooming
+        // shows "Name this place?" for 4s. Once per level, once per 30s.
+        LaunchedEffect(vm.cameraTick) {
+            val lvl = vm.engine.camera.level
+            if (!nudgeVisible && lvl.name.isBlank() && lvl.id in vm.engine.createdThisSession
+                && lvl.id !in nudgedLevels
+                && System.currentTimeMillis() - lastNudgeAt > 30000 && vm.uiVisible) {
+                val id = lvl.id
+                kotlinx.coroutines.delay(1200)
+                if (vm.engine.camera.level.id == id && vm.engine.camera.level.name.isBlank() && vm.uiVisible) {
+                    nudgedLevels.add(id)
+                    lastNudgeAt = System.currentTimeMillis()
+                    nudgeVisible = true
+                }
+            }
+        }
+        LaunchedEffect(nudgeVisible) {
+            if (nudgeVisible) { kotlinx.coroutines.delay(4000); nudgeVisible = false }
+        }
+        if (nudgeVisible) {
+            PanelSurface(modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 60.dp)) {
+                Text(
+                    "Name this place?",
+                    fontSize = 14.sp,
+                    color = textPrimary,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable { nudgeVisible = false; renamePlace = true }
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                )
+            }
+        }
+
+        // Place rename dialog (card tap / nudge tap).
+        if (renamePlace) {
+            var placeText by remember { mutableStateOf(vm.engine.camera.level.name) }
+            AlertDialog(
+                onDismissRequest = { renamePlace = false },
+                title = { Text("Name this place", color = textPrimary) },
+                text = {
+                    OutlinedTextField(
+                        value = placeText,
+                        onValueChange = { placeText = it.take(40) },
+                        singleLine = true,
+                    )
+                },
+                confirmButton = {
+                    Text("OK", Modifier.clickable {
+                        vm.renameLevel(vm.engine.camera.level.id, placeText)
+                        renamePlace = false
+                    })
+                },
+                dismissButton = { Text("Cancel", Modifier.clickable { renamePlace = false }) },
+            )
         }
 
         // U6: first-run hint — any tap or 6 seconds dismisses it.

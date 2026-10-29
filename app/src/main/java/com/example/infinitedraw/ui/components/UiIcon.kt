@@ -29,7 +29,9 @@ import kotlin.math.sin
 enum class UiIcon {
     PEN, MARKER, AIRBRUSH, PENCIL, CHARCOAL, ERASER, SELECT,
     UNDO, REDO, LAYERS, EYE, EYE_OFF, LOCK, UNLOCK,
-    MENU, CHEVRON_LEFT, CHEVRON_RIGHT, PLUS, TRASH, CLOSE, SETTINGS, IMAGE
+    MENU, CHEVRON_LEFT, CHEVRON_RIGHT, PLUS, TRASH, CLOSE, SETTINGS, IMAGE,
+    // U11 exploration icons (plan specs):
+    SEARCH, PIN, HOME, COMPASS, BACK, FORWARD, BOOKMARK, FIT
 }
 
 @Composable
@@ -183,6 +185,30 @@ private fun DrawScope.drawIcon(icon: UiIcon, tint: Color, k: Float) {
                 cornerRadius = CornerRadius(2f * k), style = Stroke(width = 2f * k))
             dot(9f, 10f, 1.6f, k, tint)
             outline(listOf(5f to 18f, 10f to 13f, 14f to 17f, 17f to 14f, 19f to 16f), 2f, k, tint)
+        }
+        // ---- U11 exploration icons ----
+        UiIcon.SEARCH -> { ring(10f, 10f, 5f, 2f, k, tint); ln(14f, 14f, 19f, 19f, 2.4f, k, tint) }
+        UiIcon.PIN -> {
+            ring(12f, 9f, 4.5f, 2f, k, tint)
+            outline(listOf(8.2f to 12.5f, 12f to 21f, 15.8f to 12.5f), 2f, k, tint)
+        }
+        UiIcon.HOME -> {
+            outline(listOf(4f to 12f, 12f to 4f, 20f to 12f), 2f, k, tint)
+            outline(listOf(6f to 12f, 6f to 20f, 18f to 20f, 18f to 12f), 2f, k, tint)
+        }
+        UiIcon.COMPASS -> {
+            ring(12f, 12f, 9f, 2f, k, tint)
+            fill(listOf(12f to 5f, 14.5f to 12f, 9.5f to 12f), k, com.example.infinitedraw.ui.theme.accent)
+            outline(listOf(12f to 19f, 14.5f to 12f, 9.5f to 12f), 2f, k, tint)
+        }
+        UiIcon.BACK -> { ln(19f, 12f, 5f, 12f, 2.4f, k, tint); outline(listOf(11f to 6f, 5f to 12f, 11f to 18f), 2.4f, k, tint) }
+        UiIcon.FORWARD -> { ln(5f, 12f, 19f, 12f, 2.4f, k, tint); outline(listOf(13f to 6f, 19f to 12f, 13f to 18f), 2.4f, k, tint) }
+        UiIcon.BOOKMARK -> outline(listOf(7f to 4f, 17f to 4f, 17f to 20f, 12f to 16f, 7f to 20f), 2f, k, tint)
+        UiIcon.FIT -> {
+            outline(listOf(4f to 9f, 4f to 4f, 9f to 4f), 2.4f, k, tint)
+            outline(listOf(15f to 4f, 20f to 4f, 20f to 9f), 2.4f, k, tint)
+            outline(listOf(20f to 15f, 20f to 20f, 15f to 20f), 2.4f, k, tint)
+            outline(listOf(9f to 20f, 4f to 20f, 4f to 15f), 2.4f, k, tint)
         }
     }
 }

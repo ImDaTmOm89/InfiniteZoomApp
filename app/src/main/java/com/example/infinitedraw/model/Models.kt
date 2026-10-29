@@ -38,6 +38,8 @@ class PlacedImage(val id: Long, val layerId: Long, val file: String,
                   val x: Float, val y: Float, val w: Float, val h: Float) // local units, x,y = top-left
 
 class ZoomLevel(val id: Int, var parent: ZoomLevel?, var originX: Double, var originY: Double) {
+    /** U11: a place name; blank until the user names the level. */
+    var name: String = ""
     val children = mutableListOf<ZoomLevel>()
     val strokes = mutableListOf<Stroke>()
     val images = mutableListOf<PlacedImage>()

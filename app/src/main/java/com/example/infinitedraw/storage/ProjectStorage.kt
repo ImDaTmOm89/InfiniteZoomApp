@@ -24,7 +24,8 @@ import java.io.File
 @Serializable
 class LevelDto(
     val id: Int, val parentId: Int?, val originX: Double, val originY: Double,
-    val strokes: List<Stroke>, val images: List<PlacedImage>
+    val strokes: List<Stroke>, val images: List<PlacedImage>,
+    val name: String = ""   // U11 places; the default keeps old saves loading
 )
 
 @Serializable
@@ -62,7 +63,7 @@ object ProjectStorage {
 
     fun toDto(p: Project, e: InfiniteZoomEngine): ProjectDto {
         val dtos = e.levels.values.map { lvl ->
-            LevelDto(lvl.id, lvl.parent?.id, lvl.originX, lvl.originY, lvl.strokes.toList(), lvl.images.toList())
+            LevelDto(lvl.id, lvl.parent?.id, lvl.originX, lvl.originY, lvl.strokes.toList(), lvl.images.toList(), lvl.name)
         }
         val c = e.camera
         return ProjectDto(
@@ -88,12 +89,13 @@ object ProjectStorage {
         // Create all ZoomLevels first
         for (ld in dto.levels) {
             if (ld.id == 0) continue
-            byId[ld.id] = ZoomLevel(ld.id, null, ld.originX, ld.originY)
+            byId[ld.id] = ZoomLevel(ld.id, null, ld.originX, ld.originY).also { it.name = ld.name }
         }
         byId[0] = e.root
         // Link parents/children, fill strokes/images
         for (ld in dto.levels) {
             val lvl = byId[ld.id] ?: continue
+            lvl.name = ld.name   // U11: names survive reopen (the root comes through here too)
             lvl.parent = ld.parentId?.let { byId[it] }
             if (ld.parentId != null) lvl.parent?.children?.add(lvl)
             lvl.strokes.addAll(ld.strokes)

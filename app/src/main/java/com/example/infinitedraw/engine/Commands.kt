@@ -121,6 +121,12 @@ class AddLayer(val layer: Layer, val index: Int) : Command {
     override fun revert(e: InfiniteZoomEngine, p: Project) { p.layers.remove(layer) }
 }
 
+/** U11: undoable place rename (a place is a named zoom level). */
+class RenameLevel(val levelId: Int, val old: String, val new: String) : Command {
+    override fun apply(e: InfiniteZoomEngine, p: Project) { e.levels[levelId]?.name = new }
+    override fun revert(e: InfiniteZoomEngine, p: Project) { e.levels[levelId]?.name = old }
+}
+
 class DeleteLayer(val layer: Layer, val index: Int, val removedStrokes: Map<Int, List<Stroke>>) : Command {
     override fun apply(e: InfiniteZoomEngine, p: Project) {
         p.layers.remove(layer)

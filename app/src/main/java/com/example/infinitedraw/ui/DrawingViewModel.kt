@@ -9,6 +9,7 @@ import kotlinx.coroutines.withContext
 import com.example.infinitedraw.engine.InfiniteZoomEngine
 import com.example.infinitedraw.engine.AddImage
 import com.example.infinitedraw.engine.AddLayer
+import com.example.infinitedraw.engine.RenameLevel
 import com.example.infinitedraw.engine.AddStroke
 import com.example.infinitedraw.engine.DeleteLayer
 import com.example.infinitedraw.engine.MoveImage
@@ -716,6 +717,20 @@ class DrawingViewModel(app: Application) : AndroidViewModel(app) {
         l.name = name
         commands.exec(SetLayerProps(id, old, propsOf(l)), engine, project)
         bumpLayers(); redraw?.invoke()
+    }
+
+    /** U11: bumped on every place rename so the card/breadcrumb recompose. */
+    var placeTick by mutableStateOf(0)
+        private set
+
+    /** U11: undoable place rename (up to 40 characters, per the plan). */
+    fun renameLevel(levelId: Int, newName: String) {
+        val lvl = engine.levels[levelId] ?: return
+        val name = newName.trim().take(40).ifBlank { lvl.name }
+        if (name == lvl.name) return
+        commands.exec(RenameLevel(levelId, lvl.name, name), engine, project)
+        placeTick++
+        autosave.schedule(); redraw?.invoke()
     }
 
     fun moveLayer(id: Long, up: Boolean) {

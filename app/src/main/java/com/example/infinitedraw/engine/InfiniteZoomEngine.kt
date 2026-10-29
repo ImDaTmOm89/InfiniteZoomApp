@@ -74,7 +74,7 @@ class InfiniteZoomEngine {
         val c = camera; val lvl = c.level
         val child = lvl.children.firstOrNull {
             abs((c.cx - it.originX) * F) < CHILD_REACH && abs((c.cy - it.originY) * F) < CHILD_REACH
-        } ?: ZoomLevel(nextLevelId++, lvl, c.cx, c.cy).also { lvl.children.add(it); levels[it.id] = it }
+        } ?: ZoomLevel(nextLevelId++, lvl, c.cx, c.cy).also { lvl.children.add(it); levels[it.id] = it; createdThisSession.add(it.id) }
         c.cx = (c.cx - child.originX) * F; c.cy = (c.cy - child.originY) * F
         c.zoom /= F; c.level = child
     }
@@ -90,8 +90,12 @@ class InfiniteZoomEngine {
         val np = ZoomLevel(nextLevelId++, null, 0.0, 0.0)
         root.parent = np; root.originX = 0.0; root.originY = 0.0
         np.children.add(root); levels[np.id] = np; root = np
+        createdThisSession.add(np.id)
         return np
     }
+
+    /** U11: levels created during this session (zoom in/out) — the naming nudge only fires for these. */
+    val createdThisSession = mutableSetOf<Int>()
 
     /** Camera center in ROOT units (tests / persistence checks). */
     fun centerInRoot(): DoubleArray {
@@ -107,5 +111,32 @@ class InfiniteZoomEngine {
         var d = 0; var l = camera.level
         while (l.parent != null) { d++; l = l.parent!! }
         return d
+    }
+
+    /** U11: depth of any level (0 = root). */
+    fun depth(level: ZoomLevel): Int {
+        var d = 0; var l = level
+        while (l.parent != null) { d++; l = l.parent!! }
+        return d
+    }
+
+    /** U11: one ancestor frame — the current camera center expressed in an ancestor's coordinates. */
+    class AncestorFrame(val level: ZoomLevel, val x: Double, val y: Double, val z: Double)
+
+    /**
+     * U11: ancestors of the current level, nearest first; (x, y) = the current
+     * camera center in that ancestor's units, z = its zoom. Same math as the
+     * ancestor chain in renderWorld, capped at 150 steps.
+     */
+    fun ancestors(): List<AncestorFrame> {
+        val out = ArrayList<AncestorFrame>()
+        var l = camera.level; var x = camera.cx; var y = camera.cy; var z = camera.zoom
+        var steps = 0
+        while (l.parent != null && steps++ < 150) {
+            val p = l.parent!!
+            x = l.originX + x / F; y = l.originY + y / F; z *= F
+            out.add(AncestorFrame(p, x, y, z)); l = p
+        }
+        return out
     }
 }
