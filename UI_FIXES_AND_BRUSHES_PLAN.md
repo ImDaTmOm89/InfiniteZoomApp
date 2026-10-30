@@ -36,6 +36,18 @@ REPORT after each step, then STOP:
   BUILD: <last 3 lines of assembleDebug>      TESTS: <last 3 lines of test>
   MY TEST: <exactly what the owner should do on the tablet>
   NEXT STEP (NOT STARTED): <id and name>
+TALKING TO THE OWNER: explain everything as if he is 12 years old. Simple everyday words. If a
+technical word is needed, explain it right there in brackets — "the ViewModel (the part of the
+app that remembers things)". Use a real-life comparison when it helps. He tests on the tablet
+unless the agent truly cannot. EVERY reply uses exactly this shape:
+  WHAT I'M DOING: 1-2 simple sentences about the work right now.
+  WHAT I'M CHANGING: one line per file and why; say if a change is outside the current step.
+  WHAT I NEED FROM YOU: exactly one of "Nothing" / "Please test this on the tablet: <exact
+  taps and what should happen>" / "Please approve this: <what, why, what could go wrong, is it
+  safe to say yes>".
+Never ask for approval without explaining it in plain words first. If a request touches a LOCKED
+file, a DEPENDENCY, or something outside the step, say so clearly and recommend yes or no. Keep it
+short — no long list of technical details unless he asks.
 PROGRESS.md: keep CURRENT STEP, NEXT ACTION and one line per step (F0-F9) up to date.
 REMEMBER: git commit AND git push after every step (before you give the report). If your
 context is getting full, stop at a safe point (build passing), update PROGRESS.md and tell the
