@@ -13,8 +13,10 @@ STOP RULE: do ONE step at a time. After a step, update PROGRESS.md, give the rep
 Do not start the next step until the owner says "go". F0 is plan-only: stop for approval.
 SESSION START: read this file, PROGRESS.md, run git status and git log --oneline.
 SAFETY: never delete files unless the owner names them (only build/, app/build/, .gradle/ are
-ok). Git: read-only commands only (status, diff, log); never commit, reset, clean, checkout.
-If the same build error happens twice, STOP and show it.
+ok). Git: status, diff and log are read-only and always fine; never reset, clean or checkout.
+COMMIT + PUSH: after EVERY finished step, git commit that step's files and then git push —
+no step is finished until the push has gone through. If the same build error happens twice,
+STOP and show it.
 LOCKED: settings.gradle.kts, build.gradle.kts (root), gradle.properties, local.properties,
 gradle/wrapper/*, gradlew, gradlew.bat, app/src/main/AndroidManifest.xml. Versions are locked
 (Kotlin 2.0.21, AGP 8.7.3, Compose BOM 2024.12.01, compileSdk 35, minSdk 29, Java 17).
@@ -34,7 +36,8 @@ REPORT after each step, then STOP:
   BUILD: <last 3 lines of assembleDebug>      TESTS: <last 3 lines of test>
   MY TEST: <exactly what the owner should do on the tablet>
   NEXT STEP (NOT STARTED): <id and name>
-PROGRESS.md: keep CURRENT STEP, NEXT ACTION and one line per step (F0-F9) up to date. If your
+PROGRESS.md: keep CURRENT STEP, NEXT ACTION and one line per step (F0-F9) up to date.
+REMEMBER: git commit AND git push after every step (before you give the report). If your
 context is getting full, stop at a safe point (build passing), update PROGRESS.md and tell the
 owner to start a new session.
 ```

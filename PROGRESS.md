@@ -267,10 +267,10 @@ Last updated: 2026-10-26 (on-device test session complete — 10 bugs found & fi
 ## UI master plan (U1-U18) — first read 2026-10-26
 
 From here on the UI_MASTER_PLAN.md Part 2 rules govern UI work (one step at a time,
-STOP after each, git read-only unless the owner asks for a commit).
+STOP after each, and git commit + git push after every step).
 
-CURRENT STEP: U10 - S Pen extras (optional) - DONE (code-complete; pen behaviors are owner tests)
-NEXT ACTION: on "go" begin the exploration phase (Step U11 - Places).
+CURRENT STEP: F0 - Audit and plan (UI_FIXES_AND_BRUSHES_PLAN.md) - DONE (report delivered; nothing but docs changed, waiting for owner approval)
+NEXT ACTION: on "go" begin Step F1 (fix the stroke cut-off: long lines stop drawing).
 
 - Step U1 - Theme and full-screen immersive mode — WAITING FOR OWNER TEST
   (ui/theme/Color.kt + Theme.kt with the design tokens; edge-to-edge + hidden
@@ -453,7 +453,7 @@ NEXT ACTION: on "go" begin the exploration phase (Step U11 - Places).
   the pen to its eraser end and draw — erases (raster eraser if a raster tool
   is active); (3) hover the pen above the glass — a thin circle the size of
   the brush follows the tip.)
-- Step U11 - Places: naming levels, place card, breadcrumb — NOT STARTED
+- Step U11 - Places: naming levels, place card, breadcrumb — DONE (owner-tested 2026-10-30)
 - Step U12 - Fly-to and history — NOT STARTED
 - Step U13 - Search — NOT STARTED
 - Step U14 - Minimap — NOT STARTED
@@ -461,6 +461,25 @@ NEXT ACTION: on "go" begin the exploration phase (Step U11 - Places).
 - Step U16 - Procreate-style gestures and edge sliders — NOT STARTED
 - Step U17 - Zoom ergonomics — NOT STARTED
 - Step U18 - Gallery: "My worlds" — NOT STARTED
+
+## UI fixes and brushes plan (F0-F9) — added 2026-10-30
+
+Governed by UI_FIXES_AND_BRUSHES_PLAN.md (self-contained). One step at a time;
+after EVERY step: update this file, then git commit AND git push.
+
+- Step F0 - Audit and plan (no code changes) — IN PROGRESS (audit + plan
+  delivered 2026-10-30, no app code touched; waiting for owner approval)
+- Step F1 - Fix the stroke cut-off (long lines stop drawing) — NOT STARTED
+- Step F2 - Rewrite the eraser — NOT STARTED
+- Step F3 - Top pill order — NOT STARTED
+- Step F4 - Color wheel — NOT STARTED
+- Step F5 - Brush model, registry, storage and migration — NOT STARTED
+- Step F6 - One Brush button and the brush picker — NOT STARTED
+- Step F7 - Apply the brush properties (renderer and input) — NOT STARTED
+- Step F8 - Shared brush settings panel — NOT STARTED
+- Step F9 - Final checks and cleanup — NOT STARTED
+
+After F9, resume UI_MASTER_PLAN.md at Step U12.
 
 Prerequisite check (2026-10-26): core app built AND verified on-device — the
 on-device test session above is exactly that verification. All numbered core
