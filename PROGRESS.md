@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-Last updated: 2026-10-26 (on-device test session complete — 10 bugs found & fixed)
+Last updated: 2026-10-30 (F0 audit and plan delivered; F1-F9 await owner approval)
 
 ## Finished steps
 - On-device test session — 2026-10-26 — **ALL 12 TEST GROUPS PASS after 10 bug fixes**
@@ -467,8 +467,8 @@ NEXT ACTION: on "go" begin Step F1 (fix the stroke cut-off: long lines stop draw
 Governed by UI_FIXES_AND_BRUSHES_PLAN.md (self-contained). One step at a time;
 after EVERY step: update this file, then git commit AND git push.
 
-- Step F0 - Audit and plan (no code changes) — IN PROGRESS (audit + plan
-  delivered 2026-10-30, no app code touched; waiting for owner approval)
+- Step F0 - Audit and plan (no code changes) — DONE 2026-10-30 (plan-only; no
+  app code touched; waiting for owner approval to start F1)
 - Step F1 - Fix the stroke cut-off (long lines stop drawing) — NOT STARTED
 - Step F2 - Rewrite the eraser — NOT STARTED
 - Step F3 - Top pill order — NOT STARTED
